@@ -12,9 +12,9 @@
   },
   "dependencies": {
     "express": "^5.1.0",
-    "@x402/express": "^0.2.3",
-    "@x402/stellar": "^0.2.3",
-    "@x402/core": "^0.2.3",
+    "@x402/express": "^2.11.0",
+    "@x402/stellar": "^2.11.0",
+    "@x402/core": "^2.11.0",
     "@stellar/stellar-sdk": "^13.1.0",
     "better-sqlite3": "^11.9.1",
     "multer": "^2.0.1",

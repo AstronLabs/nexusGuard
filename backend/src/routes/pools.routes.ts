@@ -1,7 +1,7 @@
-import { Router, Request, Response, NextFunction } from 'express';
-import { sorobanService } from '../services/soroban.service';
-import { keeperService } from '../services/keeper.service';
-import { ApiResponse, OnChainPoolInfo } from '../types';
+import { Router, Request, Response, NextFunction } from "express";
+import { sorobanService } from "../services/soroban.service";
+import { keeperService } from "../services/keeper.service";
+import { ApiResponse, OnChainPoolInfo } from "../types";
 
 const router = Router();
 
@@ -9,52 +9,63 @@ const router = Router();
  * GET /api/pools/stats
  * Get aggregate pool statistics from on-chain data.
  */
-router.get('/stats', async (_req: Request, res: Response, next: NextFunction) => {
-  try {
-    const [totalDeposits, memberCount] = await Promise.all([
-      sorobanService.getPoolTotalDeposits(),
-      sorobanService.getPoolMemberCount(),
-    ]);
+router.get(
+  "/stats",
+  async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const [totalDeposits, memberCount] = await Promise.all([
+        sorobanService.getPoolTotalDeposits(),
+        sorobanService.getPoolMemberCount(),
+      ]);
 
-    const response: ApiResponse<{ totalDeposits: string; memberCount: number }> = {
-      success: true,
-      data: {
-        totalDeposits: totalDeposits.toString(),
-        memberCount,
-      },
-      timestamp: new Date().toISOString(),
-    };
+      const response: ApiResponse<{
+        totalDeposits: string;
+        memberCount: number;
+      }> = {
+        success: true,
+        data: {
+          totalDeposits: totalDeposits.toString(),
+          memberCount,
+        },
+        timestamp: new Date().toISOString(),
+      };
 
-    res.json(response);
-  } catch (error) {
-    next(error);
-  }
-});
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 /**
  * GET /api/pools/member/:address
  * Check if an address is a pool member and get their balance.
  */
-router.get('/member/:address', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { address } = req.params;
-    const isMember = await sorobanService.isPoolMember(address);
+router.get(
+  "/member/:address",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const address = Array.isArray(req.params.address)
+        ? req.params.address[0]
+        : req.params.address;
+      const isMember = await sorobanService.isPoolMember(address);
 
-    res.json({
-      success: true,
-      data: { address, isMember },
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error) {
-    next(error);
-  }
-});
+      res.json({
+        success: true,
+        data: { address, isMember },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 /**
  * GET /api/pools/keeper/logs
  * Get recent keeper service execution logs.
  */
-router.get('/keeper/logs', (_req: Request, res: Response) => {
+router.get("/keeper/logs", (_req: Request, res: Response) => {
   const logs = keeperService.getRecentLogs(50);
 
   res.json({
@@ -68,18 +79,21 @@ router.get('/keeper/logs', (_req: Request, res: Response) => {
  * POST /api/pools/keeper/trigger
  * Manually trigger a keeper cycle (admin/debug).
  */
-router.post('/keeper/trigger', async (_req: Request, res: Response, next: NextFunction) => {
-  try {
-    await keeperService.runCycle();
+router.post(
+  "/keeper/trigger",
+  async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      await keeperService.runCycle();
 
-    res.json({
-      success: true,
-      data: { message: 'Keeper cycle triggered' },
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error) {
-    next(error);
-  }
-});
+      res.json({
+        success: true,
+        data: { message: "Keeper cycle triggered" },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 export default router;

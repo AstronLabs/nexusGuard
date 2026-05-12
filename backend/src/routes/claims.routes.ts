@@ -1,12 +1,12 @@
-import { Router, Request, Response, NextFunction } from 'express';
-import { claimVerificationService } from '../services/claim-verification.service';
-import { fraudDetectionService } from '../services/fraud-detection.service';
-import { notificationService } from '../services/notification.service';
-import { sorobanService } from '../services/soroban.service';
-import { authMiddleware } from '../middleware/auth.middleware';
-import { x402PaymentGate } from '../middleware/x402.middleware';
-import { createHttpError } from '../middleware/error.middleware';
-import { ApiResponse, VerificationReport, FraudReport } from '../types';
+import { Router, Request, Response, NextFunction } from "express";
+import { claimVerificationService } from "../services/claim-verification.service";
+import { fraudDetectionService } from "../services/fraud-detection.service";
+import { notificationService } from "../services/notification.service";
+import { sorobanService } from "../services/soroban.service";
+import { authMiddleware } from "../middleware/auth.middleware";
+import { x402PaymentGate } from "../middleware/x402.middleware";
+import { createHttpError } from "../middleware/error.middleware";
+import { ApiResponse, VerificationReport, FraudReport } from "../types";
 
 const router = Router();
 
@@ -16,12 +16,12 @@ const router = Router();
  * Body: { claimantAddress, amount, descriptionHash, evidenceCid }
  */
 router.post(
-  '/submit',
+  "/submit",
   authMiddleware,
   x402PaymentGate({
-    amount: '0.01',
-    asset: 'USDC',
-    description: 'Anti-spam fee for claim submission',
+    amount: "0.01",
+    asset: "USDC",
+    description: "Anti-spam fee for claim submission",
   }),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -29,14 +29,17 @@ router.post(
       const claimantAddress = req.stellarAddress!;
 
       if (!amount || !descriptionHash || !evidenceCid) {
-        throw createHttpError(400, 'Missing required fields: amount, descriptionHash, evidenceCid');
+        throw createHttpError(
+          400,
+          "Missing required fields: amount, descriptionHash, evidenceCid",
+        );
       }
 
       // Pre-submission validation
       const preCheck = await claimVerificationService.preSubmissionCheck(
         claimantAddress,
         BigInt(amount),
-        evidenceCid
+        evidenceCid,
       );
 
       if (!preCheck.valid) {
@@ -52,13 +55,16 @@ router.post(
       const fraudReport = await fraudDetectionService.analyzeClaim(
         -1, // Pre-submission, no claim ID yet
         claimantAddress,
-        BigInt(amount)
+        BigInt(amount),
       );
 
       // Notify the user
       notificationService.notifyClaimSubmitted(claimantAddress, -1);
 
-      const response: ApiResponse<{ preCheck: typeof preCheck; fraudReport: FraudReport }> = {
+      const response: ApiResponse<{
+        preCheck: typeof preCheck;
+        fraudReport: FraudReport;
+      }> = {
         success: true,
         data: { preCheck, fraudReport },
         timestamp: new Date().toISOString(),
@@ -68,18 +74,21 @@ router.post(
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /**
  * GET /api/claims/:id
  * Get claim details from on-chain.
  */
-router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
+router.get("/:id", async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const claimId = parseInt(req.params.id, 10);
+    const idParam = Array.isArray(req.params.id)
+      ? req.params.id[0]
+      : req.params.id;
+    const claimId = parseInt(idParam, 10);
     if (isNaN(claimId)) {
-      throw createHttpError(400, 'Invalid claim ID');
+      throw createHttpError(400, "Invalid claim ID");
     }
 
     const claim = await sorobanService.getClaim(claimId);
@@ -110,17 +119,20 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
  * Run verification on a claim — x402 payment gated.
  */
 router.get(
-  '/:id/verify',
+  "/:id/verify",
   x402PaymentGate({
-    amount: '0.001',
-    asset: 'USDC',
-    description: 'Claim verification report fee',
+    amount: "0.001",
+    asset: "USDC",
+    description: "Claim verification report fee",
   }),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const claimId = parseInt(req.params.id, 10);
+      const idParam = Array.isArray(req.params.id)
+        ? req.params.id[0]
+        : req.params.id;
+      const claimId = parseInt(idParam, 10);
       if (isNaN(claimId)) {
-        throw createHttpError(400, 'Invalid claim ID');
+        throw createHttpError(400, "Invalid claim ID");
       }
 
       const report = await claimVerificationService.verifyClaim(claimId);
@@ -135,7 +147,7 @@ router.get(
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /**
@@ -143,13 +155,16 @@ router.get(
  * Run fraud analysis on a claim.
  */
 router.get(
-  '/:id/fraud-report',
+  "/:id/fraud-report",
   authMiddleware,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const claimId = parseInt(req.params.id, 10);
+      const idParam = Array.isArray(req.params.id)
+        ? req.params.id[0]
+        : req.params.id;
+      const claimId = parseInt(idParam, 10);
       if (isNaN(claimId)) {
-        throw createHttpError(400, 'Invalid claim ID');
+        throw createHttpError(400, "Invalid claim ID");
       }
 
       const claim = await sorobanService.getClaim(claimId);
@@ -160,7 +175,7 @@ router.get(
       const report = await fraudDetectionService.analyzeClaim(
         claimId,
         claim.claimant,
-        claim.amount
+        claim.amount,
       );
 
       const response: ApiResponse<FraudReport> = {
@@ -173,20 +188,27 @@ router.get(
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /**
  * GET /api/claims/count
  * Get total claim count.
  */
-router.get('/stats/count', async (_req: Request, res: Response, next: NextFunction) => {
-  try {
-    const count = await sorobanService.getClaimCount();
-    res.json({ success: true, data: { count }, timestamp: new Date().toISOString() });
-  } catch (error) {
-    next(error);
-  }
-});
+router.get(
+  "/stats/count",
+  async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const count = await sorobanService.getClaimCount();
+      res.json({
+        success: true,
+        data: { count },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 export default router;

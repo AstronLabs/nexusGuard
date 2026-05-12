@@ -1,25 +1,29 @@
-import * as StellarSdk from '@stellar/stellar-sdk';
-import { config } from '../config';
-import { logger } from '../utils/logger';
-import { getBackendKeypair, getSorobanClient, getNetworkPassphrase } from '../utils/stellar';
+import * as StellarSdk from "@stellar/stellar-sdk";
+import { config } from "../config";
+import { logger } from "../utils/logger";
+import {
+  getBackendKeypair,
+  getSorobanClient,
+  getNetworkPassphrase,
+} from "../utils/stellar";
 import {
   OnChainClaim,
   OnChainPoolInfo,
   OnChainRecurringPayment,
   OnChainScheduledTransfer,
-} from '../types';
+} from "../types";
 
 /**
  * Soroban RPC Service
- * 
+ *
  * Wraps Soroban SDK calls for reading contract state and submitting transactions.
  * Used by the keeper service, claim verification, and fraud detection.
  */
 
-const CTX = 'SorobanService';
+const CTX = "SorobanService";
 
 export class SorobanService {
-  private client: StellarSdk.SorobanRpc.Server;
+  private client: StellarSdk.rpc.Server;
   private keypair: StellarSdk.Keypair | null = null;
 
   constructor() {
@@ -27,7 +31,7 @@ export class SorobanService {
     try {
       this.keypair = getBackendKeypair();
     } catch {
-      logger.warn(CTX, 'No backend keypair configured — read-only mode');
+      logger.warn(CTX, "No backend keypair configured — read-only mode");
     }
   }
 
@@ -39,16 +43,16 @@ export class SorobanService {
   async simulateContractCall(
     contractId: string,
     method: string,
-    args: StellarSdk.xdr.ScVal[] = []
+    args: StellarSdk.xdr.ScVal[] = [],
   ): Promise<StellarSdk.xdr.ScVal | null> {
     try {
       const account = await this.client.getAccount(
-        this.keypair?.publicKey() || config.stellar.publicKey
+        this.keypair?.publicKey() || config.stellar.publicKey,
       );
 
       const contract = new StellarSdk.Contract(contractId);
       const tx = new StellarSdk.TransactionBuilder(account, {
-        fee: '100',
+        fee: "100",
         networkPassphrase: getNetworkPassphrase(),
       })
         .addOperation(contract.call(method, ...args))
@@ -57,7 +61,7 @@ export class SorobanService {
 
       const simulation = await this.client.simulateTransaction(tx);
 
-      if (StellarSdk.SorobanRpc.Api.isSimulationSuccess(simulation)) {
+      if (StellarSdk.rpc.Api.isSimulationSuccess(simulation)) {
         const result = simulation.result;
         return result?.retval || null;
       }
@@ -65,7 +69,10 @@ export class SorobanService {
       logger.warn(CTX, `Simulation failed for ${method}`, { contractId });
       return null;
     } catch (error) {
-      logger.error(CTX, `Contract call failed: ${method}`, { contractId, error });
+      logger.error(CTX, `Contract call failed: ${method}`, {
+        contractId,
+        error,
+      });
       throw error;
     }
   }
@@ -76,10 +83,12 @@ export class SorobanService {
   async submitContractCall(
     contractId: string,
     method: string,
-    args: StellarSdk.xdr.ScVal[] = []
+    args: StellarSdk.xdr.ScVal[] = [],
   ): Promise<string> {
     if (!this.keypair) {
-      throw new Error('Backend keypair not configured — cannot submit transactions');
+      throw new Error(
+        "Backend keypair not configured — cannot submit transactions",
+      );
     }
 
     try {
@@ -87,7 +96,7 @@ export class SorobanService {
       const contract = new StellarSdk.Contract(contractId);
 
       const tx = new StellarSdk.TransactionBuilder(account, {
-        fee: '1000000',
+        fee: "1000000",
         networkPassphrase: getNetworkPassphrase(),
       })
         .addOperation(contract.call(method, ...args))
@@ -97,29 +106,33 @@ export class SorobanService {
       // Simulate first to get footprint
       const simulation = await this.client.simulateTransaction(tx);
 
-      if (!StellarSdk.SorobanRpc.Api.isSimulationSuccess(simulation)) {
-        throw new Error('Transaction simulation failed');
+      if (!StellarSdk.rpc.Api.isSimulationSuccess(simulation)) {
+        throw new Error("Transaction simulation failed");
       }
 
       // Assemble the transaction with the simulation results
-      const assembledTx = StellarSdk.SorobanRpc.assembleTransaction(tx, simulation).build();
+      const assembledTx = StellarSdk.rpc
+        .assembleTransaction(tx, simulation)
+        .build();
       assembledTx.sign(this.keypair);
 
       const sendResult = await this.client.sendTransaction(assembledTx);
 
-      if (sendResult.status === 'ERROR') {
+      if (sendResult.status === "ERROR") {
         throw new Error(`Transaction send failed: ${sendResult.status}`);
       }
 
       // Wait for confirmation
       let result = await this.client.getTransaction(sendResult.hash);
-      while (result.status === 'NOT_FOUND') {
+      while (result.status === "NOT_FOUND") {
         await new Promise((resolve) => setTimeout(resolve, 1000));
         result = await this.client.getTransaction(sendResult.hash);
       }
 
-      if (result.status === 'SUCCESS') {
-        logger.info(CTX, `Transaction confirmed: ${method}`, { hash: sendResult.hash });
+      if (result.status === "SUCCESS") {
+        logger.info(CTX, `Transaction confirmed: ${method}`, {
+          hash: sendResult.hash,
+        });
         return sendResult.hash;
       }
 
@@ -135,7 +148,7 @@ export class SorobanService {
   async getPoolTotalDeposits(): Promise<bigint> {
     const result = await this.simulateContractCall(
       config.contracts.pool,
-      'total_deposits'
+      "total_deposits",
     );
     if (!result) return BigInt(0);
     return StellarSdk.scValToBigInt(result);
@@ -144,7 +157,7 @@ export class SorobanService {
   async getPoolMemberCount(): Promise<number> {
     const result = await this.simulateContractCall(
       config.contracts.pool,
-      'member_count'
+      "member_count",
     );
     if (!result) return 0;
     return Number(StellarSdk.scValToBigInt(result));
@@ -153,8 +166,8 @@ export class SorobanService {
   async isPoolMember(address: string): Promise<boolean> {
     const result = await this.simulateContractCall(
       config.contracts.pool,
-      'is_member',
-      [StellarSdk.nativeToScVal(address, { type: 'address' })]
+      "is_member",
+      [StellarSdk.nativeToScVal(address, { type: "address" })],
     );
     if (!result) return false;
     return StellarSdk.scValToNative(result) as boolean;
@@ -165,7 +178,7 @@ export class SorobanService {
   async getClaimCount(): Promise<number> {
     const result = await this.simulateContractCall(
       config.contracts.claims,
-      'claim_count'
+      "claim_count",
     );
     if (!result) return 0;
     return Number(StellarSdk.scValToBigInt(result));
@@ -175,12 +188,15 @@ export class SorobanService {
     try {
       const result = await this.simulateContractCall(
         config.contracts.claims,
-        'get_claim',
-        [StellarSdk.nativeToScVal(claimId, { type: 'u64' })]
+        "get_claim",
+        [StellarSdk.nativeToScVal(claimId, { type: "u64" })],
       );
       if (!result) return null;
 
-      const native = StellarSdk.scValToNative(result) as Record<string, unknown>;
+      const native = StellarSdk.scValToNative(result) as Record<
+        string,
+        unknown
+      >;
       return {
         id: Number(native.id),
         claimant: native.claimant as string,
@@ -200,8 +216,8 @@ export class SorobanService {
   async getUserClaimCount(address: string): Promise<number> {
     const result = await this.simulateContractCall(
       config.contracts.claims,
-      'user_claim_count',
-      [StellarSdk.nativeToScVal(address, { type: 'address' })]
+      "user_claim_count",
+      [StellarSdk.nativeToScVal(address, { type: "address" })],
     );
     if (!result) return 0;
     return Number(StellarSdk.scValToBigInt(result));
@@ -212,36 +228,44 @@ export class SorobanService {
   async getRecurringPaymentCount(): Promise<number> {
     const result = await this.simulateContractCall(
       config.contracts.smartAccount,
-      'recurring_count'
+      "recurring_count",
     );
     if (!result) return 0;
     return Number(StellarSdk.scValToBigInt(result));
   }
 
-  async getRecurringPayment(paymentId: number): Promise<OnChainRecurringPayment | null> {
+  async getRecurringPayment(
+    paymentId: number,
+  ): Promise<OnChainRecurringPayment | null> {
     try {
       const result = await this.simulateContractCall(
         config.contracts.smartAccount,
-        'get_recurring',
-        [StellarSdk.nativeToScVal(paymentId, { type: 'u64' })]
+        "get_recurring",
+        [StellarSdk.nativeToScVal(paymentId, { type: "u64" })],
       );
       if (!result) return null;
 
-      const native = StellarSdk.scValToNative(result) as Record<string, unknown>;
+      const native = StellarSdk.scValToNative(result) as Record<
+        string,
+        unknown
+      >;
       return {
         id: Number(native.id),
         owner: native.owner as string,
         recipient: native.recipient as string,
         token: native.token as string,
         amount: BigInt(native.amount as string | number),
-        interval: (native.interval as string) === 'Weekly' ? 'Weekly' : 'Monthly',
+        interval:
+          (native.interval as string) === "Weekly" ? "Weekly" : "Monthly",
         nextExecution: Number(native.next_execution),
         totalExecuted: Number(native.total_executed),
         maxExecutions: Number(native.max_executions),
         isActive: native.is_active as boolean,
       };
     } catch (error) {
-      logger.error(CTX, `Failed to get recurring payment ${paymentId}`, { error });
+      logger.error(CTX, `Failed to get recurring payment ${paymentId}`, {
+        error,
+      });
       return null;
     }
   }
@@ -249,22 +273,27 @@ export class SorobanService {
   async getScheduledTransferCount(): Promise<number> {
     const result = await this.simulateContractCall(
       config.contracts.smartAccount,
-      'scheduled_count'
+      "scheduled_count",
     );
     if (!result) return 0;
     return Number(StellarSdk.scValToBigInt(result));
   }
 
-  async getScheduledTransfer(transferId: number): Promise<OnChainScheduledTransfer | null> {
+  async getScheduledTransfer(
+    transferId: number,
+  ): Promise<OnChainScheduledTransfer | null> {
     try {
       const result = await this.simulateContractCall(
         config.contracts.smartAccount,
-        'get_scheduled',
-        [StellarSdk.nativeToScVal(transferId, { type: 'u64' })]
+        "get_scheduled",
+        [StellarSdk.nativeToScVal(transferId, { type: "u64" })],
       );
       if (!result) return null;
 
-      const native = StellarSdk.scValToNative(result) as Record<string, unknown>;
+      const native = StellarSdk.scValToNative(result) as Record<
+        string,
+        unknown
+      >;
       return {
         id: Number(native.id),
         owner: native.owner as string,
@@ -275,7 +304,9 @@ export class SorobanService {
         executed: native.executed as boolean,
       };
     } catch (error) {
-      logger.error(CTX, `Failed to get scheduled transfer ${transferId}`, { error });
+      logger.error(CTX, `Failed to get scheduled transfer ${transferId}`, {
+        error,
+      });
       return null;
     }
   }
@@ -283,42 +314,42 @@ export class SorobanService {
   // ── Transaction Submission (for keeper) ──────────────────────
 
   async executeRecurringPayment(paymentId: number): Promise<string> {
-    if (!this.keypair) throw new Error('No backend keypair configured');
+    if (!this.keypair) throw new Error("No backend keypair configured");
 
     return this.submitContractCall(
       config.contracts.smartAccount,
-      'execute_recurring',
+      "execute_recurring",
       [
-        StellarSdk.nativeToScVal(this.keypair.publicKey(), { type: 'address' }),
-        StellarSdk.nativeToScVal(paymentId, { type: 'u64' }),
-      ]
+        StellarSdk.nativeToScVal(this.keypair.publicKey(), { type: "address" }),
+        StellarSdk.nativeToScVal(paymentId, { type: "u64" }),
+      ],
     );
   }
 
   async executeScheduledTransfer(transferId: number): Promise<string> {
-    if (!this.keypair) throw new Error('No backend keypair configured');
+    if (!this.keypair) throw new Error("No backend keypair configured");
 
     return this.submitContractCall(
       config.contracts.smartAccount,
-      'execute_scheduled',
+      "execute_scheduled",
       [
-        StellarSdk.nativeToScVal(this.keypair.publicKey(), { type: 'address' }),
-        StellarSdk.nativeToScVal(transferId, { type: 'u64' }),
-      ]
+        StellarSdk.nativeToScVal(this.keypair.publicKey(), { type: "address" }),
+        StellarSdk.nativeToScVal(transferId, { type: "u64" }),
+      ],
     );
   }
 
   // ── Helpers ──────────────────────────────────────────────────
 
-  private mapClaimStatus(status: unknown): OnChainClaim['status'] {
-    const statusMap: Record<string, OnChainClaim['status']> = {
-      Submitted: 'Submitted',
-      UnderReview: 'UnderReview',
-      ApprovedByGovernance: 'ApprovedByGovernance',
-      Rejected: 'Rejected',
-      PaidOut: 'PaidOut',
+  private mapClaimStatus(status: unknown): OnChainClaim["status"] {
+    const statusMap: Record<string, OnChainClaim["status"]> = {
+      Submitted: "Submitted",
+      UnderReview: "UnderReview",
+      ApprovedByGovernance: "ApprovedByGovernance",
+      Rejected: "Rejected",
+      PaidOut: "PaidOut",
     };
-    return statusMap[String(status)] || 'Submitted';
+    return statusMap[String(status)] || "Submitted";
   }
 }
 
