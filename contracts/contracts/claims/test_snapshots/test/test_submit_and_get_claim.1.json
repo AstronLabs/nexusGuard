@@ -53,6 +53,9 @@
                 },
                 {
                   "string": "QmSomeHash123"
+                },
+                {
+                  "string": "QmSomeHash123"
                 }
               ]
             }
@@ -136,6 +139,14 @@
                       },
                       "val": {
                         "string": "crop_failure_2025"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "evidence_cid"
+                      },
+                      "val": {
+                        "string": "QmSomeHash123"
                       }
                     },
                     {

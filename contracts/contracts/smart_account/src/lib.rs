@@ -188,6 +188,12 @@ impl SmartAccountContract {
         }
 
         env.storage().persistent().set(&DataKey::RecurringPayment(payment_id), &payment);
+
+        // Emit event
+        env.events().publish(
+            ("recurring_exec", "executed"),
+            (payment_id, payment.owner.clone(), payment.amount, now),
+        );
     }
 
     pub fn cancel_recurring(env: Env, owner: Address, payment_id: u64) {
@@ -210,6 +216,44 @@ impl SmartAccountContract {
 
     pub fn recurring_count(env: Env) -> u64 {
         env.storage().instance().get(&DataKey::RecurringCount).unwrap_or(0)
+    }
+
+    /// Get all recurring payments that are currently due for execution.
+    pub fn get_due_payments(env: Env) -> Vec<u64> {
+        let now = env.ledger().timestamp();
+        let count: u64 = env.storage().instance()
+            .get(&DataKey::RecurringCount).unwrap_or(0);
+        let mut due: Vec<u64> = Vec::new(&env);
+
+        for i in 0..count {
+            if let Some(payment) = env.storage().persistent()
+                .get::<_, RecurringPayment>(&DataKey::RecurringPayment(i)) {
+                if payment.is_active && now >= payment.next_execution {
+                    if payment.max_executions == 0 || payment.total_executed < payment.max_executions {
+                        due.push_back(i);
+                    }
+                }
+            }
+        }
+        due
+    }
+
+    /// Get all scheduled transfers that are currently due for execution.
+    pub fn get_due_scheduled(env: Env) -> Vec<u64> {
+        let now = env.ledger().timestamp();
+        let count: u64 = env.storage().instance()
+            .get(&DataKey::ScheduledCount).unwrap_or(0);
+        let mut due: Vec<u64> = Vec::new(&env);
+
+        for i in 0..count {
+            if let Some(transfer) = env.storage().persistent()
+                .get::<_, ScheduledTransfer>(&DataKey::ScheduledTransfer(i)) {
+                if !transfer.executed && now >= transfer.execute_after {
+                    due.push_back(i);
+                }
+            }
+        }
+        due
     }
 
     // ════════════════════════════════════════════════════════════
@@ -284,7 +328,13 @@ impl SmartAccountContract {
 
         limit.current_spent += amount;
         env.storage().persistent()
-            .set(&DataKey::SpendingLimit(owner, token), &limit);
+            .set(&DataKey::SpendingLimit(owner.clone(), token.clone()), &limit);
+
+        // Emit event
+        env.events().publish(
+            ("spending_limit", "updated"),
+            (owner, token, limit.current_spent, limit.max_amount, env.ledger().timestamp()),
+        );
     }
 
     pub fn get_spending_limit(env: Env, owner: Address, token: Address) -> SpendingLimit {
@@ -396,6 +446,12 @@ impl SmartAccountContract {
             );
             proposal.executed = true;
             env.storage().persistent().set(&DataKey::MultisigProposal(proposal_id), &proposal);
+
+            // Emit event
+            env.events().publish(
+                ("multisig_exec", "executed"),
+                (proposal_id, proposal.proposer.clone(), proposal.amount, env.ledger().timestamp()),
+            );
         }
 
         env.storage().persistent().set(&DataKey::MultisigApprovals(proposal_id), &approvals);
@@ -475,6 +531,12 @@ impl SmartAccountContract {
 
         transfer.executed = true;
         env.storage().persistent().set(&DataKey::ScheduledTransfer(transfer_id), &transfer);
+
+        // Emit event
+        env.events().publish(
+            ("scheduled_exec", "executed"),
+            (transfer_id, transfer.owner.clone(), transfer.amount, now),
+        );
     }
 
     pub fn cancel_scheduled(env: Env, owner: Address, transfer_id: u64) {

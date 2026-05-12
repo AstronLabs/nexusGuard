@@ -26,6 +26,15 @@ pub struct PoolConfig {
     pub max_pool_size: i128,
 }
 
+// ── Pool Info (view function return) ────────────────────────────
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct PoolInfo {
+    pub total_deposits: i128,
+    pub member_count: u64,
+    pub token_address: Address,
+}
+
 #[contract]
 pub struct PoolTreasuryContract;
 
@@ -92,7 +101,7 @@ impl PoolTreasuryContract {
         if is_new {
             env.storage()
                 .persistent()
-                .set(&DataKey::IsMember(member), &true);
+                .set(&DataKey::IsMember(member.clone()), &true);
 
             let count: u64 = env
                 .storage()
@@ -111,6 +120,12 @@ impl PoolTreasuryContract {
         env.storage()
             .instance()
             .set(&DataKey::TotalDeposits, &(total + amount));
+
+        // Emit event
+        env.events().publish(
+            ("pool", "contribution"),
+            (member, amount, total + amount, env.ledger().timestamp()),
+        );
     }
 
     /// Disburse funds to a recipient. Only callable by authorized contracts.
@@ -145,6 +160,12 @@ impl PoolTreasuryContract {
         env.storage()
             .instance()
             .set(&DataKey::TotalDeposits, &(total - amount));
+
+        // Emit event
+        env.events().publish(
+            ("pool", "disbursement"),
+            (recipient, amount, total - amount, env.ledger().timestamp()),
+        );
     }
 
     // ── View Functions ──────────────────────────────────────────
@@ -175,6 +196,32 @@ impl PoolTreasuryContract {
             .persistent()
             .get(&DataKey::IsMember(addr))
             .unwrap_or(false)
+    }
+
+    pub fn get_pool_info(env: Env) -> PoolInfo {
+        let total_deposits: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalDeposits)
+            .unwrap_or(0);
+
+        let member_count: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::MemberCount)
+            .unwrap_or(0);
+
+        let token_address: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::TokenAddress)
+            .expect("not initialized");
+
+        PoolInfo {
+            total_deposits,
+            member_count,
+            token_address,
+        }
     }
 
     // ── Internal ────────────────────────────────────────────────

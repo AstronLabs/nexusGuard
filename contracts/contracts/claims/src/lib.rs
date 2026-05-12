@@ -34,6 +34,7 @@ pub struct Claim {
     pub amount: i128,
     pub description_hash: String,
     pub evidence_ipfs: String,
+    pub evidence_cid: String,  // Parsed/structured CID for cleaner retrieval
     pub status: ClaimStatus,
     pub submitted_at: u64,
     pub updated_at: u64,
@@ -70,6 +71,7 @@ impl ClaimsContract {
         amount: i128,
         description_hash: String,
         evidence_ipfs: String,
+        evidence_cid: String,
     ) -> u64 {
         claimant.require_auth();
         assert!(amount > 0, "claim amount must be positive");
@@ -89,6 +91,7 @@ impl ClaimsContract {
             amount,
             description_hash,
             evidence_ipfs,
+            evidence_cid,
             status: ClaimStatus::Submitted,
             submitted_at: now,
             updated_at: now,
@@ -106,10 +109,16 @@ impl ClaimsContract {
             .unwrap_or(0);
         env.storage()
             .persistent()
-            .set(&DataKey::UserClaimCount(claimant), &(user_count + 1));
+            .set(&DataKey::UserClaimCount(claimant.clone()), &(user_count + 1));
 
         count += 1;
         env.storage().instance().set(&DataKey::ClaimCount, &count);
+
+        // Emit event
+        env.events().publish(
+            ("claim", "submitted"),
+            (claim_id, claimant, amount, now),
+        );
 
         claim_id
     }
@@ -132,12 +141,19 @@ impl ClaimsContract {
             .get(&DataKey::Claim(claim_id))
             .expect("claim not found");
 
-        claim.status = new_status;
+        let old_status = claim.status.clone();
+        claim.status = new_status.clone();
         claim.updated_at = env.ledger().timestamp();
 
         env.storage()
             .persistent()
             .set(&DataKey::Claim(claim_id), &claim);
+
+        // Emit event
+        env.events().publish(
+            ("claim", "status_updated"),
+            (claim_id, old_status, new_status, env.ledger().timestamp()),
+        );
     }
 
     /// Mark claim as paid out after payout engine executes.
@@ -163,6 +179,12 @@ impl ClaimsContract {
         env.storage()
             .persistent()
             .set(&DataKey::Claim(claim_id), &claim);
+
+        // Emit event
+        env.events().publish(
+            ("claim", "paid_out"),
+            (claim_id, claim.claimant.clone(), claim.amount, env.ledger().timestamp()),
+        );
     }
 
     // ── View Functions ──────────────────────────────────────────
@@ -212,8 +234,9 @@ mod test {
 
         let desc = String::from_str(&env, "crop_failure_2025");
         let ipfs = String::from_str(&env, "QmSomeHash123");
+        let cid = String::from_str(&env, "QmSomeHash123");
 
-        let id = client.submit_claim(&claimant, &500_000_000i128, &desc, &ipfs);
+        let id = client.submit_claim(&claimant, &500_000_000i128, &desc, &ipfs, &cid);
         assert_eq!(id, 0);
         assert_eq!(client.claim_count(), 1);
 
@@ -221,5 +244,6 @@ mod test {
         assert_eq!(claim.claimant, claimant);
         assert_eq!(claim.amount, 500_000_000i128);
         assert_eq!(claim.status, ClaimStatus::Submitted);
+        assert_eq!(claim.evidence_cid, cid);
     }
 }

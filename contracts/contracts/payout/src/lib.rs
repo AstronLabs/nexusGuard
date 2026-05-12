@@ -1,5 +1,5 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, Vec};
+use soroban_sdk::{contract, contractimpl, contracttype, Address, Env};
 
 // ── Storage Keys ────────────────────────────────────────────────
 #[contracttype]
@@ -92,10 +92,16 @@ impl PayoutEngineContract {
 
         count += 1;
         env.storage().instance().set(&DataKey::PayoutCount, &count);
+
+        // Emit event
+        env.events().publish(
+            ("payout", "queued"),
+            (claim_id, record.recipient, record.amount, env.ledger().timestamp()),
+        );
     }
 
-    /// Execute a pending payout — transfers funds from pool to recipient.
-    /// In production this would invoke the pool contract's disburse method.
+    /// Execute a pending payout — marks as disbursed.
+    /// Backend keeper service orchestrates actual fund transfer from pool to recipient.
     pub fn execute_payout(env: Env, admin: Address, claim_id: u64) {
         admin.require_auth();
 
@@ -117,15 +123,18 @@ impl PayoutEngineContract {
             "payout not in pending state"
         );
 
-        // TODO: Cross-contract call to pool treasury to transfer funds
-        // pool_contract.disburse(&record.recipient, &record.amount);
-
         record.status = PayoutStatus::Disbursed;
         record.timestamp = env.ledger().timestamp();
 
         env.storage()
             .persistent()
             .set(&DataKey::PayoutRecord(claim_id), &record);
+
+        // Emit event for backend indexing and fund transfer orchestration
+        env.events().publish(
+            ("payout", "disbursed"),
+            (claim_id, record.recipient, record.amount, env.ledger().timestamp()),
+        );
     }
 
     /// Read a payout record.
