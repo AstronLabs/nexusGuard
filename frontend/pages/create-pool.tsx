@@ -217,7 +217,7 @@ export default function CreatePoolPage() {
                   <div className="grid grid-cols-1 gap-lg md:grid-cols-2">
                     <label className="block">
                       <span className="mb-xs block font-label-caps text-label-caps text-outline">
-                        Contribution Amount (one-time, USDC)
+                        Monthly Contribution Amount (USDC)
                       </span>
                       <div className="relative">
                         <input

@@ -227,8 +227,8 @@ export default function DashboardPage() {
                                 </td>
                                 <td className="px-lg py-md">
                                   <div className="flex items-center gap-xs">
-                                    <span className={`w-2 h-2 rounded-full ${p.summary?.status === "Active" ? "bg-secondary-fixed-dim animate-pulse" : "bg-outline"}`} />
-                                    <span className="text-body-sm text-on-surface-variant">{p.summary?.status ?? "—"}</span>
+                                    <span className={`w-2 h-2 rounded-full ${p.summary?.phase === "Active" ? "bg-secondary-fixed-dim animate-pulse" : "bg-outline"}`} />
+                                    <span className="text-body-sm text-on-surface-variant">{p.summary?.phase ?? "—"}</span>
                                   </div>
                                 </td>
                               </tr>

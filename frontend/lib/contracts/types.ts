@@ -1,11 +1,13 @@
 /** Mirrors the Soroban Pool contract data structures */
 
-export enum PoolStatus {
+export enum PoolPhase {
+  Formation = "Formation",
   Active = "Active",
-  Paused = "Paused",
-  Matured = "Matured",
   Closed = "Closed",
 }
+
+/** @deprecated use PoolPhase */
+export type PoolStatus = PoolPhase;
 
 export enum ClaimStatus {
   PendingReview = "PendingReview",
@@ -25,14 +27,21 @@ export type PoolSummary = {
   name: string;
   description: string;
   creator: string;
-  status: PoolStatus;
+  phase: PoolPhase;
+  /** @deprecated use phase */
+  status: PoolPhase;
   totalFunds: bigint;
   memberCount: number;
+  minMembers: number;
   maxMembers: number;
   contributionAmount: bigint;
   claimCount: number;
+  currentCycle: number;
+  signerCount: number;
   createdAt: number;
+  activatedAt: number;
   expiresAt: number;
+  paused: boolean;
 };
 
 export type Claim = {

@@ -7,6 +7,7 @@ import { Header } from "../components/header";
 import { Footer } from "../components/footer";
 import { useWallet } from "../context/WalletContext";
 import { pool, type PoolSummary, type Claim as ClaimType } from "../lib/contracts";
+import { PoolPhase } from "../lib/contracts/types";
 import { fromStroops, shortenAddress } from "../lib/contracts/config";
 
 type Tab = "overview" | "members" | "claims";
@@ -23,6 +24,9 @@ export default function PoolDetailsPage() {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
+  const [paying, setPaying] = useState(false);
+  const [isMemberSigner, setIsMemberSigner] = useState(false);
+  const [isMemberActiveState, setIsMemberActiveState] = useState(true);
   const [status, setStatus] = useState("");
 
   useEffect(() => {
@@ -50,29 +54,43 @@ export default function PoolDetailsPage() {
   useEffect(() => {
     if (!poolAddress || !address) return;
     pool.getMemberRole(poolAddress, address).then(setUserRole);
+    pool.isSigner(poolAddress, address).then(setIsMemberSigner);
+    pool.isMemberActive(poolAddress, address).then(setIsMemberActiveState);
   }, [poolAddress, address]);
 
   async function handleJoin() {
-    if (!isConnected) {
-      await connect();
-      return;
-    }
+    if (!isConnected) { await connect(); return; }
     setJoining(true);
     setStatus("");
     try {
       await pool.joinPool(poolAddress, address);
       setStatus("Successfully joined the pool!");
-      const [s, m] = await Promise.all([
-        pool.getPoolSummary(poolAddress),
-        pool.getMembers(poolAddress),
-      ]);
+      const [s, m] = await Promise.all([pool.getPoolSummary(poolAddress), pool.getMembers(poolAddress)]);
       setSummary(s);
       setMembers(m);
       setUserRole("Member");
+      setIsMemberActiveState(true);
     } catch (e) {
       setStatus(e instanceof Error ? e.message : "Failed to join pool");
     } finally {
       setJoining(false);
+    }
+  }
+
+  async function handlePayContribution() {
+    if (!isConnected) { await connect(); return; }
+    setPaying(true);
+    setStatus("");
+    try {
+      const cycle = summary?.currentCycle ?? 0;
+      await pool.payContribution(poolAddress, address, cycle);
+      setStatus(`Contribution paid for cycle ${cycle}!`);
+      const s = await pool.getPoolSummary(poolAddress);
+      setSummary(s);
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : "Failed to pay contribution");
+    } finally {
+      setPaying(false);
     }
   }
 
@@ -117,8 +135,14 @@ export default function PoolDetailsPage() {
                 <div className="w-12 h-12 rounded-xl bg-primary-container flex items-center justify-center text-on-primary-container">
                   <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>shield</span>
                 </div>
-                <span className="bg-secondary-container text-on-secondary-container px-sm py-xs rounded-full font-label-caps text-label-caps">
-                  {summary?.status?.toUpperCase() ?? "POOL"}
+                <span className={`px-sm py-xs rounded-full font-label-caps text-label-caps ${
+                  summary?.phase === PoolPhase.Active
+                    ? "bg-secondary-container text-on-secondary-container"
+                    : summary?.phase === PoolPhase.Formation
+                    ? "bg-tertiary-container text-on-tertiary-container"
+                    : "bg-surface-container text-on-surface-variant"
+                }`}>
+                  {summary?.phase?.toUpperCase() ?? "POOL"}
                 </span>
                 {userRole && (
                   <span className="bg-primary-fixed text-on-primary-fixed px-sm py-xs rounded-full font-label-caps text-label-caps">
@@ -199,8 +223,16 @@ export default function PoolDetailsPage() {
                       <span className="font-mono-data text-mono-data">{shortenAddress(summary.creator)}</span>
                     </div>
                     <div>
-                      <span className="block font-label-caps text-label-caps text-on-surface-variant mb-xs">STATUS</span>
-                      <span className="font-headline-sm text-headline-sm text-secondary">{summary.status}</span>
+                      <span className="block font-label-caps text-label-caps text-on-surface-variant mb-xs">PHASE</span>
+                      <span className="font-headline-sm text-headline-sm text-secondary">{summary.phase}</span>
+                    </div>
+                    <div>
+                      <span className="block font-label-caps text-label-caps text-on-surface-variant mb-xs">CYCLE</span>
+                      <span className="font-headline-sm text-headline-sm text-primary">#{summary.currentCycle}</span>
+                    </div>
+                    <div>
+                      <span className="block font-label-caps text-label-caps text-on-surface-variant mb-xs">REVIEWERS</span>
+                      <span className="font-headline-sm text-headline-sm text-primary">{summary.signerCount}</span>
                     </div>
                   </div>
                   <div className="mt-lg pt-lg border-t border-outline-variant/20">
@@ -312,14 +344,35 @@ export default function PoolDetailsPage() {
               <section className="bg-primary text-on-primary p-xl rounded-xl shadow-sm">
                 {userRole ? (
                   <>
-                    <div className="flex items-center gap-sm mb-md">
+                    <div className="flex items-center gap-sm mb-xs">
                       <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>verified</span>
                       <h3 className="font-headline-md text-headline-md">You are a {userRole}</h3>
                     </div>
+                    {isMemberSigner && (
+                      <div className="flex items-center gap-xs mb-xs">
+                        <span className="material-symbols-outlined text-[16px]">manage_accounts</span>
+                        <span className="font-label-caps text-label-caps opacity-90">SELECTED REVIEWER</span>
+                      </div>
+                    )}
+                    {!isMemberActiveState && (
+                      <p className="text-sm bg-on-primary/20 rounded-lg px-sm py-xs mb-sm">
+                        ⚠ Coverage paused — missed contribution
+                      </p>
+                    )}
                     <p className="font-body-sm text-body-sm mb-lg opacity-80">
-                      Contribution paid: {summary ? `${fromStroops(summary.contributionAmount).toFixed(2)} USDC` : "—"}
+                      Monthly contribution: {summary ? `${fromStroops(summary.contributionAmount).toFixed(2)} USDC` : "—"} · Cycle #{summary?.currentCycle ?? 0}
                     </p>
                     <div className="flex flex-col gap-sm">
+                      {summary?.phase === PoolPhase.Active && (
+                        <button
+                          onClick={handlePayContribution}
+                          disabled={paying || !isMemberActiveState}
+                          className="w-full bg-on-primary/15 border border-on-primary/40 text-on-primary py-md rounded-lg font-bold hover:bg-on-primary/25 transition-all disabled:opacity-40 flex items-center justify-center gap-sm"
+                        >
+                          <span className="material-symbols-outlined text-[20px]">payments</span>
+                          {paying ? "Processing..." : "Pay Monthly Contribution"}
+                        </button>
+                      )}
                       <Link
                         href={`/claims/new?pool=${poolAddress}`}
                         className="w-full bg-on-primary text-primary py-md rounded-lg font-bold text-center hover:brightness-105 transition-all flex items-center justify-center gap-sm"
@@ -327,27 +380,36 @@ export default function PoolDetailsPage() {
                         <span className="material-symbols-outlined text-[20px]">add_circle</span>
                         Make a Claim
                       </Link>
-                      <Link
-                        href={`/claim-voting?pool=${poolAddress}`}
-                        className="w-full border border-on-primary/40 text-on-primary py-md rounded-lg font-bold text-center hover:bg-on-primary/10 transition-all flex items-center justify-center gap-sm"
-                      >
-                        <span className="material-symbols-outlined text-[20px]">how_to_vote</span>
-                        Vote on Claims
-                      </Link>
+                      {isMemberSigner && (
+                        <Link
+                          href={`/claim-voting?pool=${poolAddress}`}
+                          className="w-full border border-on-primary/40 text-on-primary py-md rounded-lg font-bold text-center hover:bg-on-primary/10 transition-all flex items-center justify-center gap-sm"
+                        >
+                          <span className="material-symbols-outlined text-[20px]">how_to_vote</span>
+                          Review Claims
+                        </Link>
+                      )}
                     </div>
                   </>
                 ) : (
                   <>
                     <h3 className="font-headline-md text-headline-md mb-md">Join This Pool</h3>
                     <p className="font-body-sm text-body-sm mb-lg opacity-80">
-                      Pay a one-time contribution of {summary ? `${fromStroops(summary.contributionAmount).toFixed(2)} USDC` : "—"} to become a member and gain coverage + voting rights.
+                      Pay {summary ? `${fromStroops(summary.contributionAmount).toFixed(2)} USDC` : "—"} to join.
+                      Monthly contributions required · 60-day waiting period before claims.
                     </p>
+                    {summary?.phase === PoolPhase.Formation && (
+                      <p className="text-xs opacity-70 mb-sm">
+                        Pool needs {(summary.minMembers - summary.memberCount)} more member{summary.minMembers - summary.memberCount !== 1 ? "s" : ""} to activate
+                        ({summary.memberCount}/{summary.minMembers} min).
+                      </p>
+                    )}
                     <button
                       onClick={handleJoin}
-                      disabled={joining || summary?.status !== "Active"}
+                      disabled={joining || summary?.phase === PoolPhase.Closed || summary?.paused}
                       className="w-full bg-secondary-fixed text-on-secondary-fixed py-md rounded-lg font-bold hover:brightness-105 transition-all disabled:opacity-50"
                     >
-                      {joining ? "Joining..." : isConnected ? `Pay & Join Pool` : "Connect Wallet"}
+                      {joining ? "Joining..." : isConnected ? "Pay & Join Pool" : "Connect Wallet"}
                     </button>
                   </>
                 )}

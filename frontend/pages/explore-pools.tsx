@@ -41,16 +41,16 @@ export default function ExplorePoolsPage() {
     load();
   }, []);
 
-  function statusDot(status: string) {
-    if (status === "Active") return "bg-secondary animate-pulse";
-    if (status === "Paused") return "bg-tertiary-container";
-    if (status === "Closed") return "bg-outline";
-    return "bg-error animate-pulse";
+  function phaseDot(phase: string) {
+    if (phase === "Active") return "bg-secondary animate-pulse";
+    if (phase === "Formation") return "bg-tertiary-container";
+    if (phase === "Closed") return "bg-outline";
+    return "bg-outline";
   }
 
-  function statusLabel(status: string) {
-    if (status === "Active") return "text-secondary";
-    if (status === "Paused") return "text-on-tertiary-container";
+  function phaseLabel(phase: string) {
+    if (phase === "Active") return "text-secondary";
+    if (phase === "Formation") return "text-on-tertiary-container";
     return "text-on-surface-variant";
   }
 
@@ -110,9 +110,9 @@ export default function ExplorePoolsPage() {
                           {s?.name || `Pool #${p.id}`}
                         </h3>
                         <div className="flex items-center gap-xs">
-                          <span className={`w-2 h-2 rounded-full ${statusDot(s?.status ?? (p.active ? "Active" : "Closed"))}`} />
-                          <span className={`font-label-caps text-label-caps ${statusLabel(s?.status ?? "Active")}`}>
-                            {(s?.status ?? (p.active ? "ACTIVE" : "CLOSED")).toUpperCase()}
+                          <span className={`w-2 h-2 rounded-full ${phaseDot(s?.phase ?? (p.active ? "Active" : "Closed"))}`} />
+                          <span className={`font-label-caps text-label-caps ${phaseLabel(s?.phase ?? "Active")}`}>
+                            {(s?.phase ?? (p.active ? "ACTIVE" : "CLOSED")).toUpperCase()}
                           </span>
                         </div>
                       </div>
