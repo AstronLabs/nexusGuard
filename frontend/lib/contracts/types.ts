@@ -59,10 +59,22 @@ export type FactoryPoolInfo = {
   active: boolean;
 };
 
+/** Pool category enum matching contract's PoolCategory */
+export const POOL_CATEGORY_MAP: Record<string, number> = {
+  Health: 0,
+  Crop: 1,
+  Property: 2,
+  Vehicle: 3,
+  Travel: 4,
+  Business: 5,
+  Other: 6,
+};
+
 /** Configuration passed when creating a pool via Factory */
 export type CreatePoolParams = {
   name: string;
   description: string;
+  category: number;
   contributionAmount: bigint;
   maxMembers: number;
   metadataCid: string;

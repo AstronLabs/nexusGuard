@@ -1,6 +1,7 @@
 /**
  * Pool contract client — interacts with individual pool instances.
  */
+import { xdr } from "@stellar/stellar-sdk";
 import {
   readContract,
   callContract,
@@ -21,7 +22,7 @@ export async function getPoolSummary(
   try {
     const result = await readContract({
       contractId: poolAddress,
-      method: "get_pool_summary",
+      method: "get_summary",
     });
     return parsePoolSummary(scValToNative(result));
   } catch {
@@ -52,7 +53,7 @@ export async function getMemberRole(
       args: [addressToScVal(member)],
     });
     const raw = scValToNative(result);
-    return raw as Role;
+    return parseRole(raw);
   } catch {
     return null;
   }
@@ -171,7 +172,7 @@ export async function voteOnClaim(
     args: [
       addressToScVal(voterAddress),
       u64ToScVal(claimId),
-      nativeBoolToScVal(approve),
+      voteChoiceToScVal(approve),
     ],
     sourceAddress: voterAddress,
     submit: true,
@@ -187,7 +188,7 @@ export async function resolveClaim(
   const txHash = await callContract({
     contractId: poolAddress,
     method: "resolve_claim",
-    args: [addressToScVal(callerAddress), u64ToScVal(claimId)],
+    args: [u64ToScVal(claimId)],
     sourceAddress: callerAddress,
     submit: true,
   });
@@ -248,14 +249,23 @@ function parsePoolSummary(raw: any): PoolSummary {
     description: String(raw.description ?? ""),
     creator: String(raw.creator ?? ""),
     status: parsePoolStatus(raw.status),
-    totalFunds: BigInt(raw.total_funds ?? 0),
+    totalFunds: BigInt(raw.balance ?? 0),
     memberCount: Number(raw.member_count ?? 0),
     maxMembers: Number(raw.max_members ?? 0),
-    contributionAmount: BigInt(raw.contribution_amount ?? 0),
+    contributionAmount: BigInt(raw.fixed_contribution ?? 0),
     claimCount: Number(raw.claim_count ?? 0),
     createdAt: Number(raw.created_at ?? 0),
     expiresAt: Number(raw.expires_at ?? 0),
   };
+}
+
+function parseRole(raw: any): Role {
+  // ScVec([ScSymbol("Variant")]) → ["Variant"]
+  if (Array.isArray(raw) && raw.length > 0) return String(raw[0]) as Role;
+  // ScMap({ Variant: null }) → { Variant: null }
+  if (typeof raw === "object" && raw !== null) return Object.keys(raw)[0] as Role;
+  // ScSymbol → "Variant"
+  return String(raw) as Role;
 }
 
 function parsePoolStatus(raw: any): PoolStatus {
@@ -270,8 +280,7 @@ function parsePoolStatus(raw: any): PoolStatus {
   return statusMap[key] ?? ("Active" as PoolStatus);
 }
 
-/** Boolean to ScVal */
-function nativeBoolToScVal(value: boolean) {
-  const { nativeToScVal } = require("@stellar/stellar-sdk");
-  return nativeToScVal(value, { type: "bool" });
+/** Encode VoteChoice enum variant as Soroban contracttype ScVal */
+function voteChoiceToScVal(approve: boolean): xdr.ScVal {
+  return xdr.ScVal.scvVec([xdr.ScVal.scvSymbol(approve ? "Approve" : "Reject")]);
 }

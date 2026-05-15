@@ -1,6 +1,6 @@
-## Overview
+# NexusGuard
 
-**PoolSafe** is a decentralized peer-to-peer microinsurance platform designed for Nigeria's uninsured majority. It enables small groups of people (10–30 members) to form **cover pools** for specific everyday risks — like phone screen cracks, minor medical emergencies, and laptop theft — and collectively protect each other through transparent, blockchain-enforced rules.
+**NexusGuard** is a decentralized peer-to-peer microinsurance platform designed for Nigeria's uninsured majority. It enables small groups of people (10–30 members) to form **cover pools** for specific everyday risks — like phone screen cracks, minor medical emergencies, and laptop theft and collectively protect each other through transparent, blockchain-enforced rules.
 
 No insurance company. No middleman. Just people protecting people, powered by Stellar.
 
@@ -27,353 +27,156 @@ Meanwhile, **everyday financial shocks are constant**:
 
 ## The Solution
 
-PoolSafe takes the **age-old concept of community risk-sharing** and puts it on-chain with transparent, enforceable rules.
+NexusGuard takes the **age-old concept of community risk-sharing** and puts it on-chain with transparent, enforceable rules.
 
 ### How It Works
 
-1. **Create a Pool** — A user creates a cover pool for a specific risk (e.g. "Phone Damage Cover") with defined parameters: max members, weekly contribution amount, maximum payout per claim, and voting quorum.
+1. **Create a Pool** — A user creates a cover pool for a specific risk (e.g. "Phone Damage Cover") with defined parameters: max members (up to 30), fixed contribution amount, and category.
 
-2. **Join & Contribute** — Members join the pool and make small weekly contributions.
+2. **Join & Contribute** — Members join the pool and pay the fixed USDC contribution.
 
-3. **File a Claim** — When a covered event happens, a member submits a claim with evidence. The claim amount must be within the pool's maximum payout limit.
+3. **File a Claim** — When a covered event happens, a member submits a claim with evidence uploaded to IPFS. A 24-hour cooldown applies between claims.
 
-4. **Peer Voting** — All pool members review the claim and vote: **approve**, **reject**, or **abstain**. The claim must reach a configurable quorum (e.g. 60% approval) within a voting window.
+4. **Peer Voting** — All pool members review the claim and vote: **approve** or **reject**. A 60% quorum is required for approval within the review window.
 
-5. **Payout or Rollover** — Approved claims trigger an automatic on-chain payout to the claimant. Unclaimed funds roll over to the next period or are **returned to members quarterly** as a dividend.
+5. **Payout** — Approved claims trigger an automatic on-chain USDC payout to the claimant, capped at 50% of the pool balance.
 
 ### Key Design Principles
 
 - **Transparency** — All contributions, claims, and votes are recorded on the Stellar blockchain
 - **Trust Minimization** — Smart contracts enforce rules; no single admin can steal funds
-- **Community Governance** — Pool members collectively decide on claims through democratic voting
-- **Micro-Affordability** — Low Contributions make coverage accessible to students and gig workers
-- **Quarterly Returns** — Unclaimed funds aren't lost; they're returned to contributors proportionally
+- **Community Governance** — Pool members collectively decide on claims through quorum voting
+- **Micro-Affordability** — Low fixed contributions make coverage accessible to students and gig workers
+- **On-chain USDC** — Uses Stellar's native USDC (SAC) — no wrapped tokens or bridging
 
 ---
 
-### Data Flow
+### Off-chain Services (Next.js API Routes)
 
-1. **User** connects their Stellar wallet via the Next.js frontend
-2. **Pool interactions** (create, join, contribute) are sent directly to Soroban smart contracts via the Stellar SDK
-3. **Claims & voting** transactions are submitted on-chain for full transparency
-4. **Next.js API routes** handle any off-chain needs (event indexing, notifications)
-5. All **funds are held in smart contracts** — no custodial backend
+IPFS evidence uploads are proxied through Next.js API routes to Pinata — no separate backend server required.
+
+| Route | Purpose |
+|---|---|
+| `POST /api/ipfs/upload` | Upload claim evidence file to Pinata/IPFS |
+| `POST /api/ipfs/upload-json` | Upload pool/claim metadata JSON to IPFS |
 
 ---
 
-## Backend Architecture (Node.js/Express)
+## Smart Contracts
 
-The backend provides **off-chain services** that the frontend and smart contracts depend on:
+Three Soroban contracts (Rust, SDK v22) — deployed on Stellar Testnet:
 
-### Purpose
+| Contract | Package | Description |
+|---|---|---|
+| **Factory** | `nexusguard-factory` | Deploys and tracks all pool instances via WASM hash |
+| **Pool** | `nexusguard-pool` | Self-contained insurance pool: members, claims, voting, payouts |
+| **Smart Account** | `poolsafe-smart-account` | Optional: recurring payments, spending limits, multisig |
 
-- **x402 Payment Layer** — Anti-spam micropayment verification for claim submission and IPFS uploads
-- **Claim Verification** — Cross-reference claim amounts against pool limits and IPFS evidence validation
-- **Fraud Detection** — Rule-based risk scoring for flagging suspicious claims before governance voting
-- **IPFS Integration** — Upload and pin claim evidence files (images, documents) via Pinata
-- **In-App Notifications** — SQLite-based notification system for contribution reminders, claim status updates, and votes
-- **Keeper Service** — Automated executor that polls smart contracts every 15 minutes to run due recurring payments and scheduled transfers
+### Deployed Addresses (Testnet)
 
-### Architecture
+| | Address |
+|---|---|
+| **Factory Contract** | `CB43V4IO5VSQTNBMFWJEMZTOBS7UN5S6LEOQQIV2AXMCSVX5APFLNQ5W` |
+| **Pool WASM Hash** | `2be1d1c3fc9751a251cc6481904d697fe485d82b741ceabd9efc50cb5e2befa2` |
+| **USDC Token (SAC)** | `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA` |
+| **Deployer/Admin** | `GALK2FN3QXLETSVMUEVWR4IE2FYEFEMWZR2QXU5EU6APVJVATFLS7HON` |
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Frontend (Next.js)                      │
-└──────────────────────│──────────────────────────────────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│              x402 Express Middleware                         │
-│  (Payment gating: 0.01 USDC per claim, 0.005 USDC per upload)
-└──────────────────────│──────────────────────────────────────┘
-                       │
-        ┌──────────────┼──────────────┐
-        ▼              ▼              ▼
-   ┌────────────┐ ┌──────────┐ ┌──────────────┐
-   │ Auth       │ │ Error    │ │ Logging      │
-   │ Middleware │ │ Handler  │ │ Middleware   │
-   └────────────┘ └──────────┘ └──────────────┘
-        │              │
-        ▼              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    API Routes                               │
-│  /api/health /api/claims /api/ipfs /api/notifications       │
-│  /api/pools  /api/keeper                                    │
-└──────────────────────│──────────────────────────────────────┘
-                       │
-        ┌──────────────┼────────────┬──────────────┐
-        ▼              ▼            ▼              ▼
-   ┌──────────────┐ ┌────────────┐ ┌───────────┐ ┌─────────┐
-   │ Claim        │ │ Fraud      │ │ Keeper    │ │ IPFS    │
-   │ Verification │ │ Detection  │ │ Service   │ │ Service │
-   └──────────────┘ └────────────┘ └───────────┘ └─────────┘
-        │              │              │            │
-        └──────────────┼──────────────┼────────────┘
-                       ▼
-            ┌──────────────────────┐
-            │  Soroban RPC Client  │
-            │  (Contract Reads)    │
-            └──────────────────────┘
-                       │
-                       ▼
-            ┌──────────────────────┐
-            │ Stellar Testnet      │
-            │ (Soroban Contracts)  │
-            └──────────────────────┘
-```
+### Pool Contract — Key Rules
 
-### Core Services
+- Max 30 members per pool
+- Claim cooldown: 24 hours per member
+- Voting quorum: 60% approval required
+- Max payout per claim: 50% of pool balance
+- Roles: Creator, Manager, Member
 
-| Service                    | Responsibility                                              |
-| -------------------------- | ----------------------------------------------------------- |
-| **Claim Verification**     | Validates claim amount, IPFS evidence, pool membership      |
-| **Fraud Detection**        | Scores claims (0-100): velocity, amount anomaly, new member |
-| **Keeper (15-min cycles)** | Executes due recurring payments and scheduled transfers     |
-| **IPFS (Pinata)**          | Uploads/pins claim evidence; validates CIDs                 |
-| **Notifications (SQLite)** | Stores in-app notifications; convenience methods for types  |
-| **Soroban RPC**            | Queries contracts: pool state, claim data, payment schedule |
+### Pool Category Mapping
 
-### Getting Started — Backend
-
-#### Prerequisites
-
-- **Node.js** ≥ 20.0.0
-- **npm** ≥ 11.0.0
-- **Stellar Testnet Keypair** — for x402 and keeper service signing
-
-#### Environment Setup
-
-1. Copy `.env.example` to `.env`:
-
-   ```bash
-   cd backend
-   cp .env.example .env
-   ```
-
-2. Configure `.env` with your values:
-
-   ```env
-   # Server
-   PORT=4000
-   NODE_ENV=development
-
-   # Stellar / Soroban
-   STELLAR_NETWORK=testnet
-   STELLAR_RPC_URL=https://soroban-testnet.stellar.org
-   STELLAR_HORIZON_URL=https://horizon-testnet.stellar.org
-   STELLAR_NETWORK_PASSPHRASE=Test SDF Network ; September 2015
-   STELLAR_SECRET_KEY=S...your_testnet_secret_key
-   STELLAR_PUBLIC_KEY=G...your_testnet_public_key
-
-   # Contract Addresses (from deployments)
-   CONTRACT_POOL=C...
-   CONTRACT_CLAIMS=C...
-   CONTRACT_VOTING=C...
-   CONTRACT_GOVERNANCE=C...
-   CONTRACT_TOKEN=C...
-   CONTRACT_PAYOUT=C...
-   CONTRACT_SMART_ACCOUNT=C...
-
-   # x402
-   X402_PAYMENT_ASSET=USDC
-   X402_FACILITATOR_URL=https://x402.stellar.org/facilitator
-
-   # Pinata IPFS
-   PINATA_API_KEY=your_pinata_key
-   PINATA_SECRET_KEY=your_pinata_secret
-
-   # SQLite
-   SQLITE_DB_PATH=./data/nexusguard.db
-   ```
-
-3. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-#### Running the Backend
-
-**Development mode** (hot reload):
-
-```bash
-npm run dev
-```
-
-**Production build**:
-
-```bash
-npm run build
-npm start
-```
-
-**Health check**:
-
-```bash
-curl http://localhost:4000/api/health
-```
-
-#### Key Endpoints
-
-| Method | Route                          | Auth | x402 Fee  | Purpose                                 |
-| ------ | ------------------------------ | ---- | --------- | --------------------------------------- |
-| GET    | `/api/health`                  | —    | —         | Server health check                     |
-| POST   | `/api/claims/submit`           | ✓    | 0.01 USD  | Submit new claim (anti-spam)            |
-| GET    | `/api/claims/:id`              | —    | —         | Get claim details from on-chain         |
-| GET    | `/api/claims/:id/verify`       | —    | 0.001 USD | Run verification report                 |
-| GET    | `/api/claims/:id/fraud-report` | ✓    | —         | Get fraud score and flags               |
-| POST   | `/api/ipfs/upload`             | ✓    | 0.005 USD | Upload claim evidence file              |
-| POST   | `/api/ipfs/upload-json`        | ✓    | 0.005 USD | Upload claim data as JSON               |
-| GET    | `/api/notifications`           | ✓    | —         | Get user notifications (limit, unread)  |
-| PATCH  | `/api/notifications/:id/read`  | ✓    | —         | Mark notification as read               |
-| GET    | `/api/pools/stats`             | —    | —         | Get pool statistics (deposits, members) |
-| GET    | `/api/pools/member/:address`   | —    | —         | Check pool membership                   |
-| GET    | `/api/pools/keeper/logs`       | —    | —         | Get keeper service execution logs       |
+| Category | Value |
+|---|---|
+| Health | 0 |
+| Crop | 1 |
+| Property | 2 |
+| Vehicle | 3 |
+| Travel | 4 |
+| Business | 5 |
+| Other | 6 |
 
 ---
 
 ## Tech Stack
 
-| Layer          | Technology                          | Purpose                                        |
-| -------------- | ----------------------------------- | ---------------------------------------------- |
-| **Frontend**   | Next.js 16 (App Router, TypeScript) | Server-rendered UI with React 19               |
-| **Backend**    | Node.js + Express 5.1 (TypeScript)  | x402 gateway, claim verification, keeper       |
-| **Wallet**     | Freighter Wallet                    | Stellar wallet connection and tx signing       |
-| **State**      | Zustand                             | Lightweight client-side state management       |
-| **IPFS**       | Pinata REST API                     | Claim evidence file pinning                    |
-| **Database**   | SQLite (better-sqlite3)             | In-app notifications & keeper logs             |
-| **Blockchain** | Stellar (Soroban)                   | Smart contract platform for on-chain logic     |
-| **Contracts**  | Rust (Soroban SDK v22)              | Seven modular smart contracts                  |
-| **SDK**        | @stellar/stellar-sdk v13            | JavaScript SDK for Stellar/Soroban interaction |
+| Layer | Technology | Purpose |
+|---|---|---|
+| **Frontend** | Next.js 14 (Pages Router, TypeScript) | UI with React hooks and TailwindCSS |
+| **Wallet** | Freighter Wallet + `@stellar/freighter-api` v6 | Stellar wallet connection and tx signing |
+| **IPFS** | Pinata REST API (via Next.js API routes) | Claim evidence file pinning |
+| **Blockchain** | Stellar Testnet (Soroban) | Smart contract platform |
+| **Contracts** | Rust (Soroban SDK v22) | 3 modular smart contracts |
+| **SDK** | `@stellar/stellar-sdk` v15 | JavaScript SDK for Stellar/Soroban interaction |
+| **Styling** | TailwindCSS + Material Symbols | UI styling and icons |
 
 ---
 
 ## Project Structure
 
 ```
-PoolSafe/
+nexusGuard/
 ├── README.md
 ├── .gitignore
 │
-├── frontend/                           # Next.js 16 application
-│   ├── src/
-│   │   ├── app/                        # Next.js App Router pages
-│   │   ├── components/
-│   │   │   ├── pools/                 # Pool management UI components
-│   │   │   │   ├── PoolCard.tsx
-│   │   │   │   ├── PoolList.tsx
-│   │   │   │   ├── CreatePoolForm.tsx
-│   │   │   │   ├── JoinPoolModal.tsx
-│   │   │   │   └── PoolDetails.tsx
-│   │   │   ├── claims/                # Claim submission & tracking
-│   │   │   │   ├── ClaimForm.tsx
-│   │   │   │   ├── ClaimCard.tsx
-│   │   │   │   ├── ClaimList.tsx
-│   │   │   │   └── ClaimTimeline.tsx
-│   │   │   ├── voting/                # Peer voting interface
-│   │   │   │   ├── VotingPanel.tsx
-│   │   │   │   ├── VoteCard.tsx
-│   │   │   │   └── VotingResults.tsx
-│   │   │   ├── dashboard/             # User dashboard & analytics
-│   │   │   │   ├── Dashboard.tsx
-│   │   │   │   ├── StatsOverview.tsx
-│   │   │   │   ├── ActivityFeed.tsx
-│   │   │   │   └── PoolSummary.tsx
-│   │   │   ├── layout/                # App shell components
-│   │   │   │   ├── Navbar.tsx
-│   │   │   │   ├── Footer.tsx
-│   │   │   │   └── Sidebar.tsx
-│   │   │   └── shared/                # Reusable UI primitives
-│   │   │       ├── Button.tsx
-│   │   │       ├── Modal.tsx
-│   │   │       ├── Card.tsx
-│   │   │       ├── Avatar.tsx
-│   │   │       ├── Badge.tsx
-│   │   │       └── Loader.tsx
-│   │   ├── hooks/                      # Custom React hooks
-│   │   │   ├── useWallet.ts           # Freighter wallet connection
-│   │   │   ├── usePools.ts            # Pool CRUD operations
-│   │   │   ├── useClaims.ts           # Claim management
-│   │   │   ├── useVoting.ts           # Vote submission & results
-│   │   │   ├── useSoroban.ts          # Generic Soroban contract calls
-│   │   │   └── useSmartAccount.ts     # Smart account automation hook
-│   │   ├── lib/                        # Core libraries
-│   │   │   ├── stellar.ts             # Stellar SDK configuration
-│   │   │   ├── soroban.ts             # Soroban client helpers
-│   │   │   └── utils.ts               # General utilities
-│   │   ├── services/                   # API client services
-│   │   │   ├── api.ts                 # Base API client (fetch wrapper)
-│   │   │   ├── pool.service.ts
-│   │   │   ├── claim.service.ts
-│   │   │   ├── vote.service.ts
-│   │   │   └── smart-account.service.ts  # Smart account contract calls
-│   │   ├── types/                      # Shared TypeScript types
-│   │   │   ├── pool.types.ts
-│   │   │   ├── claim.types.ts
-│   │   │   ├── vote.types.ts
-│   │   │   ├── user.types.ts
-│   │   │   ├── smart-account.types.ts
-│   │   │   └── index.ts
-│   │   ├── context/                    # React context providers
-│   │   │   ├── WalletContext.tsx
-│   │   │   └── PoolContext.tsx
-│   │   └── styles/                     # Global CSS
-│   ├── public/
+├── frontend/                           # Next.js 14 application
+│   ├── pages/                          # Next.js Pages Router
+│   │   ├── index.tsx                   # Landing page (live stats from contracts)
+│   │   ├── explore-pools.tsx           # Browse all pools from Factory
+│   │   ├── pool-details.tsx            # Pool detail, members, claims
+│   │   ├── create-pool.tsx             # Create new pool via Factory
+│   │   ├── dashboard.tsx               # User's pools, claims, pending votes
+│   │   ├── claim-voting.tsx            # Vote on pending claims
+│   │   └── claims/
+│   │       └── new.tsx                 # Submit a claim with IPFS evidence
+│   ├── components/
+│   │   ├── header.tsx                  # Shared nav with WalletButton
+│   │   ├── footer.tsx                  # Shared footer
+│   │   ├── wallet-button.tsx           # Freighter connect/disconnect
+│   │   ├── button.tsx                  # Reusable Button component
+│   │   └── FigmaPage.tsx               # Page wrapper with title
+│   ├── context/
+│   │   └── WalletContext.tsx           # Global wallet state (Freighter)
+│   ├── hooks/
+│   │   └── useFreighterWallet.ts       # Low-level Freighter hook
+│   ├── lib/
+│   │   └── contracts/
+│   │       ├── index.ts                # Barrel exports
+│   │       ├── types.ts                # PoolSummary, Claim, enums, POOL_CATEGORY_MAP
+│   │       ├── config.ts               # Network config, CONTRACTS, conversion helpers
+│   │       ├── soroban.ts              # Transaction build/simulate/submit helpers
+│   │       ├── factory.ts              # Factory contract client
+│   │       ├── pool.ts                 # Pool contract client
+│   │       └── pinata.ts               # IPFS upload helpers (via API routes)
+│   ├── pages/api/
+│   │   ├── ipfs/
+│   │   │   ├── upload.ts               # Proxy file uploads to Pinata
+│   │   │   └── upload-json.ts          # Proxy JSON uploads to Pinata
+│   ├── styles/
+│   │   └── globals.css
+│   ├── .env.local                      # Runtime env vars (gitignored)
 │   ├── package.json
-│   ├── tsconfig.json
-│   └── next.config.ts
-│├── backend/                            # Node.js/Express API server
-│   ├── src/
-│   │   ├── index.ts                    # Express app entry point
-│   │   ├── config/
-│   │   │   └── index.ts                # Environment configuration
-│   │   ├── middleware/
-│   │   │   ├── x402.middleware.ts      # HTTP 402 payment-gating
-│   │   │   ├── auth.middleware.ts      # Stellar address verification
-│   │   │   └── error.middleware.ts     # Global error handler
-│   │   ├── routes/
-│   │   │   ├── health.routes.ts        # Health check endpoint
-│   │   │   ├── claims.routes.ts        # Claim submission & verification
-│   │   │   ├── ipfs.routes.ts          # IPFS file uploads (Pinata)
-│   │   │   ├── notifications.routes.ts # In-app notifications CRUD
-│   │   │   └── pools.routes.ts         # Pool statistics & keeper logs
-│   │   ├── services/
-│   │   │   ├── soroban.service.ts      # Soroban RPC client wrapper
-│   │   │   ├── keeper.service.ts       # Recurring/scheduled payment executor
-│   │   │   ├── claim-verification.service.ts  # Evidence & pool validation
-│   │   │   ├── fraud-detection.service.ts     # Rule-based fraud scoring
-│   │   │   ├── ipfs.service.ts         # Pinata integration
-│   │   │   └── notification.service.ts # SQLite notification store
-│   │   ├── types/
-│   │   │   └── index.ts                # Backend-specific TypeScript types
-│   │   └── utils/
-│   │       ├── logger.ts               # Structured logging
-│   │       └── stellar.ts              # Stellar SDK helpers
-│   ├── .env.example
-│   ├── package.json
-│   ├── tsconfig.json
-│   └── .gitignore
-│└── contracts/                          # Soroban smart contracts (Rust)
+│   ├── tailwind.config.ts
+│   └── next.config.js
+│
+└── contracts/                          # Soroban smart contracts (Rust)
     ├── Cargo.toml                      # Workspace manifest
+    ├── .env                            # Deployer config (gitignored)
+    ├── scripts/
+    │   └── deploy-pool-testnet.sh      # Build + deploy Factory + Pool WASM
     └── contracts/
-        ├── pool/                       # Cover pool management
+        ├── factory/                    # Factory contract
         │   ├── Cargo.toml
         │   └── src/lib.rs
-        ├── claims/                     # Claim submission & payouts
+        ├── pool/                       # Pool contract (self-contained)
         │   ├── Cargo.toml
         │   └── src/lib.rs
-        ├── voting/                     # Peer voting engine
-        │   ├── Cargo.toml
-        │   └── src/lib.rs
-        ├── governance/                 # Pool parameter governance
-        │   ├── Cargo.toml
-        │   └── src/lib.rs
-        ├── token/                      # Contribution tracking token
-        │   ├── Cargo.toml
-        │   └── src/lib.rs
-        ├── payout/                     # Automated payouts
-        │   ├── Cargo.toml
-        │   └── src/lib.rs
-        └── smart_account/             # Smart account automation
+        └── smart_account/              # Smart account (optional automation)
             ├── Cargo.toml
             └── src/lib.rs
 ```
@@ -385,69 +188,126 @@ PoolSafe/
 ### Prerequisites
 
 - **Node.js** ≥ 20.0.0
-- **npm** ≥ 11.0.0
-- **Rust** (latest stable) — for Soroban contract development
-- **Stellar CLI** — `cargo install stellar-cli` (for contract building & deployment)
-- **Stellar Testnet Keypair** — for x402 payment layer and keeper automation
+- **Rust** (latest stable) + `wasm32v1-none` target
+- **Stellar CLI** — `cargo install stellar-cli`
+- **Freighter Wallet** browser extension — [freighter.app](https://freighter.app)
+- **Pinata account** — for IPFS uploads ([pinata.cloud](https://pinata.cloud))
 
-### Quick Start
+---
 
-#### 1. Clone the Repository
+### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/yourusername/nexusguard.git
 cd nexusguard
 ```
 
-#### 2. Frontend Setup (Next.js)
+---
+
+### 2. Frontend Setup
 
 ```bash
 cd frontend
 npm install
+```
+
+Create `frontend/.env.local`:
+
+```env
+# Factory contract (deployed on Stellar Testnet)
+NEXT_PUBLIC_FACTORY_CONTRACT_ID=CB43V4IO5VSQTNBMFWJEMZTOBS7UN5S6LEOQQIV2AXMCSVX5APFLNQ5W
+
+# USDC Token SAC (Stellar Testnet)
+NEXT_PUBLIC_USDC_TOKEN_ID=CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA
+
+# Deployer/admin address
+NEXT_PUBLIC_DEPLOYER_ADDRESS=GALK2FN3QXLETSVMUEVWR4IE2FYEFEMWZR2QXU5EU6APVJVATFLS7HON
+
+# Pinata (for IPFS uploads — optional, claims work without it)
+PINATA_API_KEY=your_pinata_api_key
+PINATA_API_SECRET=your_pinata_api_secret
+```
+
+Run the dev server:
+
+```bash
 npm run dev
 ```
 
 Frontend runs on `http://localhost:3000`
 
-#### 3. Backend Setup (Node.js/Express)
+---
 
-```bash
-cd backend
-npm install
-cp .env.example .env
-# Edit .env with your Stellar keypair and contract addresses
-npm run dev
-```
+### 3. Contract Deployment (Soroban)
 
-Backend runs on `http://localhost:4000`
-
-#### 4. Contract Deployment (Soroban)
+Contracts are already deployed on Stellar Testnet (see addresses above). To redeploy:
 
 ```bash
 cd contracts
-cargo build --release
-stellar contract deploy \
-  --wasm ./target/wasm32-unknown-unknown/release/nexusguard_pool.wasm \
-  --source-account GXXXXXX \
-  --network testnet
-# Repeat for each contract (claims, voting, governance, token, payout, smart_account)
 ```
 
-Then update `backend/.env` with the deployed contract addresses.
+Create `contracts/.env`:
 
-#### 5. Test Full Flow
+```env
+STELLAR_SOURCE_ACCOUNT=nexusguard-deployer
+FACTORY_ADMIN=<your_stellar_address>
+POOL_TOKEN_ADDRESS=CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA
+```
 
-- Open `http://localhost:3000` in your browser
-- Connect your Stellar testnet wallet (via Freighter)
-- Create a pool → Join pool → Submit a claim → Vote on claims
-- Backend keeper service will auto-execute recurring payments every 15 minutes
-- Check notifications at `/api/notifications` after claims are processed
+Run the deploy script:
+
+```bash
+bash scripts/deploy-pool-testnet.sh
+```
+
+This will:
+1. Generate and fund a testnet identity (if needed)
+2. Build both contracts (`nexusguard-pool`, `nexusguard-factory`)
+3. Upload Pool WASM → get hash
+4. Deploy Factory → get contract ID
+5. Initialize Factory with Pool WASM hash and USDC token
+6. Auto-write all contract IDs back to `contracts/.env` and `frontend/.env.local`
+
+---
+
+### 4. Test Full Flow
+
+1. Open `http://localhost:3000`
+2. Connect Freighter wallet (set to **Stellar Testnet**)
+3. **Explore Pools** → browse live pools from the Factory contract
+4. **Create Pool** → deploys a new pool instance on-chain
+5. **Pool Details** → join a pool, view members and claims
+6. **Submit Claim** → upload evidence to IPFS, call `Pool.submit_claim`
+7. **Claim Voting** → review evidence, vote approve/reject via `Pool.vote_on_claim`
+8. **Dashboard** → view your pool memberships, filed claims, pending votes
+
+---
+
+## Environment Variables Reference
+
+### `frontend/.env.local`
+
+| Variable | Description |
+|---|---|
+| `NEXT_PUBLIC_FACTORY_CONTRACT_ID` | Deployed Factory contract address |
+| `NEXT_PUBLIC_USDC_TOKEN_ID` | USDC SAC contract address on testnet |
+| `NEXT_PUBLIC_DEPLOYER_ADDRESS` | Admin/deployer Stellar address |
+| `PINATA_API_KEY` | Pinata API key for IPFS uploads |
+| `PINATA_API_SECRET` | Pinata secret key |
+
+### `contracts/.env`
+
+| Variable | Description |
+|---|---|
+| `STELLAR_SOURCE_ACCOUNT` | Stellar CLI identity name for signing |
+| `FACTORY_ADMIN` | Admin address for the Factory contract |
+| `POOL_TOKEN_ADDRESS` | USDC token contract address |
+| `FACTORY_CONTRACT_ID` | Auto-filled after deployment |
+| `POOL_WASM_HASH` | Auto-filled after deployment |
 
 ---
 
 ## Contributing
-
-We welcome contributions! Please check [issues](issues) tab .
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
@@ -460,5 +320,3 @@ We welcome contributions! Please check [issues](issues) tab .
 ## License
 
 MIT
-
----

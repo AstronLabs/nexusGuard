@@ -99,6 +99,7 @@ export async function createPool(
       addressToScVal(creatorAddress),
       stringToScVal(params.name),
       stringToScVal(params.description),
+      u32ToScVal(params.category),
       i128ToScVal(params.contributionAmount),
       u32ToScVal(params.maxMembers),
       stringToScVal(params.metadataCid),

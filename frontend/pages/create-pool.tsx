@@ -1,13 +1,13 @@
 import { useRouter } from "next/router";
 import type { FormEvent } from "react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { Button } from "../components/button";
 import { FigmaPage } from "../components/FigmaPage";
 import { Footer } from "../components/footer";
 import { Header } from "../components/header";
 import { useWallet } from "../context/WalletContext";
-import { factory } from "../lib/contracts";
+import { factory, POOL_CATEGORY_MAP } from "../lib/contracts";
 import { toStroops, CONTRACTS } from "../lib/contracts/config";
 import { uploadMetadata } from "../lib/contracts/pinata";
 
@@ -17,7 +17,6 @@ type PoolForm = {
   category: string;
   premium: string;
   maxMembers: string;
-  votingThreshold: string;
 };
 
 const initialForm: PoolForm = {
@@ -26,38 +25,17 @@ const initialForm: PoolForm = {
   category: "Other",
   premium: "",
   maxMembers: "",
-  votingThreshold: "66"
 };
 
 export default function CreatePoolPage() {
   const [form, setForm] = useState<PoolForm>(initialForm);
-  const [signers, setSigners] = useState<string[]>([""]);
   const [status, setStatus] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const router = useRouter();
   const { address, isConnected, isConnecting, error, connect } = useWallet();
 
-  const validSigners = useMemo(
-    () => signers.map((signer) => signer.trim()).filter(Boolean),
-    [signers]
-  );
-
   function updateField(field: keyof PoolForm, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
-  }
-
-  function updateSigner(index: number, value: string) {
-    setSigners((current) =>
-      current.map((signer, signerIndex) => (signerIndex === index ? value : signer))
-    );
-  }
-
-  function addSigner() {
-    setSigners((current) => [...current, ""]);
-  }
-
-  function removeSigner(index: number) {
-    setSigners((current) => current.filter((_, signerIndex) => signerIndex !== index));
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -85,8 +63,6 @@ export default function CreatePoolPage() {
           name: form.name,
           description: form.description,
           category: form.category,
-          signers: validSigners,
-          votingThreshold: Number(form.votingThreshold),
           createdBy: connectedAddress,
         };
         const result = await uploadMetadata(metadata);
@@ -101,6 +77,7 @@ export default function CreatePoolPage() {
       const txHash = await factory.createPool(connectedAddress, {
         name: form.name,
         description: form.description,
+        category: POOL_CATEGORY_MAP[form.category] ?? 6,
         contributionAmount: toStroops(Number(form.premium)),
         maxMembers: Number(form.maxMembers) || 30,
         metadataCid,
@@ -168,8 +145,7 @@ export default function CreatePoolPage() {
                   Start a Coverage Pool
                 </h1>
                 <p className="max-w-[760px] font-body-lg text-body-lg text-on-surface-variant">
-                  Configure pool rules, add trusted signers, and connect Freighter before submitting
-                  the pool transaction.
+                  Configure your pool identity and financial parameters. Protocol rules (voting quorum, payout caps) are enforced by the smart contract.
                 </p>
               </header>
 
@@ -241,7 +217,7 @@ export default function CreatePoolPage() {
                   <div className="grid grid-cols-1 gap-lg md:grid-cols-2">
                     <label className="block">
                       <span className="mb-xs block font-label-caps text-label-caps text-outline">
-                        Monthly Premium
+                        Contribution Amount (one-time, USDC)
                       </span>
                       <div className="relative">
                         <input
@@ -278,71 +254,31 @@ export default function CreatePoolPage() {
                 </section>
 
                 <section className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-lg shadow-sm">
-                  <div className="mb-lg flex items-center justify-between gap-md">
-                    <div className="flex items-center gap-md">
-                      <div className="rounded-lg bg-secondary-container/30 p-sm">
-                        <span className="material-symbols-outlined text-secondary">group_add</span>
-                      </div>
-                      <div>
-                        <h2 className="font-headline-md text-headline-md">Pool Signers</h2>
-                        <p className="font-body-sm text-body-sm text-on-surface-variant">
-                          Add Stellar public keys that should review or co-sign pool decisions.
-                        </p>
-                      </div>
-                    </div>
-                    <Button onClick={addSigner} variant="outline">
-                      Add Signer
-                    </Button>
-                  </div>
-
-                  <div className="space-y-sm">
-                    {signers.map((signer, index) => (
-                      <div className="flex flex-col gap-sm md:flex-row" key={index}>
-                        <input
-                          className="min-w-0 flex-1 rounded-lg border border-outline-variant bg-surface p-md font-mono-data text-body-sm outline-none transition-all focus:border-secondary focus:ring-2 focus:ring-secondary/20"
-                          onChange={(event) => updateSigner(index, event.target.value)}
-                          placeholder="G..."
-                          value={signer}
-                        />
-                        <Button
-                          className="md:w-[112px]"
-                          disabled={signers.length === 1}
-                          onClick={() => removeSigner(index)}
-                          variant="ghost"
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                <section className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-lg shadow-sm">
                   <div className="mb-lg flex items-center gap-md">
                     <div className="rounded-lg bg-secondary-container/30 p-sm">
                       <span className="material-symbols-outlined text-secondary">rule</span>
                     </div>
-                    <h2 className="font-headline-md text-headline-md">Claim Rules</h2>
-                  </div>
-
-                  <label className="block">
-                    <span className="mb-xs block font-label-caps text-label-caps text-outline">
-                      Voting Threshold
-                    </span>
-                    <div className="flex items-center gap-md">
-                      <input
-                        className="flex-1 accent-secondary"
-                        max="90"
-                        min="51"
-                        onChange={(event) => updateField("votingThreshold", event.target.value)}
-                        type="range"
-                        value={form.votingThreshold}
-                      />
-                      <span className="rounded bg-surface-container-high px-sm py-xs font-mono-data text-body-sm text-primary">
-                        {form.votingThreshold}%
-                      </span>
+                    <div>
+                      <h2 className="font-headline-md text-headline-md">Protocol Rules</h2>
+                      <p className="font-body-sm text-body-sm text-on-surface-variant">Enforced by the smart contract — cannot be changed per pool.</p>
                     </div>
-                  </label>
+                  </div>
+                  <div className="grid grid-cols-1 gap-md sm:grid-cols-3">
+                    {[
+                      { icon: "how_to_vote", label: "Voting Quorum", value: "60%", note: "of members must approve" },
+                      { icon: "timer", label: "Claim Cooldown", value: "24 hrs", note: "between claims per member" },
+                      { icon: "paid", label: "Max Payout", value: "50%", note: "of pool balance per claim" },
+                    ].map(({ icon, label, value, note }) => (
+                      <div key={label} className="flex items-start gap-md rounded-lg bg-surface-container-high p-md">
+                        <span className="material-symbols-outlined mt-[2px] text-secondary">{icon}</span>
+                        <div>
+                          <div className="font-label-caps text-label-caps uppercase text-outline">{label}</div>
+                          <div className="font-headline-sm text-headline-sm font-bold text-primary">{value}</div>
+                          <div className="font-body-sm text-body-sm text-on-surface-variant">{note}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </section>
 
                 <section className="flex flex-col items-start justify-between gap-lg rounded-xl border border-outline-variant/30 bg-surface-container-low p-lg md:flex-row md:items-center">

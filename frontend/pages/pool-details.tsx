@@ -156,6 +156,25 @@ export default function PoolDetailsPage() {
             {/* Left Column */}
             <div className="col-span-12 lg:col-span-8 flex flex-col gap-xl">
               {tab === "overview" && summary && (
+                <>
+                {userRole && (
+                  <div className="flex flex-wrap gap-md mb-xl">
+                    <Link
+                      href={`/claims/new?pool=${poolAddress}`}
+                      className="flex items-center gap-sm bg-primary text-on-primary px-lg py-sm rounded-lg font-bold hover:opacity-90 transition-all"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">add_circle</span>
+                      Make a Claim
+                    </Link>
+                    <Link
+                      href={`/claim-voting?pool=${poolAddress}`}
+                      className="flex items-center gap-sm border border-primary text-primary px-lg py-sm rounded-lg font-bold hover:bg-primary/5 transition-all"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">how_to_vote</span>
+                      Vote on Claims
+                    </Link>
+                  </div>
+                )}
                 <section className="bg-surface-container-lowest p-xl rounded-xl border border-outline-variant/30 shadow-sm">
                   <h2 className="font-headline-md text-headline-md text-primary mb-lg">Pool Overview</h2>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-lg">
@@ -189,6 +208,7 @@ export default function PoolDetailsPage() {
                     <span className="font-mono-data text-mono-data text-on-surface break-all">{poolAddress}</span>
                   </div>
                 </section>
+                </>
               )}
 
               {tab === "members" && (
@@ -288,24 +308,48 @@ export default function PoolDetailsPage() {
 
             {/* Right Column */}
             <aside className="col-span-12 lg:col-span-4 flex flex-col gap-xl">
-              {/* Join Pool Card */}
+              {/* Join / Member Actions Card */}
               <section className="bg-primary text-on-primary p-xl rounded-xl shadow-sm">
-                <h3 className="font-headline-md text-headline-md mb-md">Join This Pool</h3>
-                <p className="font-body-sm text-body-sm mb-lg opacity-80">
-                  Contribute {summary ? `${fromStroops(summary.contributionAmount).toFixed(2)} USDC` : "—"} to become a member and gain voting rights on claims.
-                </p>
                 {userRole ? (
-                  <div className="bg-secondary-fixed text-on-secondary-fixed p-md rounded-lg text-center font-bold">
-                    You are a {userRole}
-                  </div>
+                  <>
+                    <div className="flex items-center gap-sm mb-md">
+                      <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>verified</span>
+                      <h3 className="font-headline-md text-headline-md">You are a {userRole}</h3>
+                    </div>
+                    <p className="font-body-sm text-body-sm mb-lg opacity-80">
+                      Contribution paid: {summary ? `${fromStroops(summary.contributionAmount).toFixed(2)} USDC` : "—"}
+                    </p>
+                    <div className="flex flex-col gap-sm">
+                      <Link
+                        href={`/claims/new?pool=${poolAddress}`}
+                        className="w-full bg-on-primary text-primary py-md rounded-lg font-bold text-center hover:brightness-105 transition-all flex items-center justify-center gap-sm"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">add_circle</span>
+                        Make a Claim
+                      </Link>
+                      <Link
+                        href={`/claim-voting?pool=${poolAddress}`}
+                        className="w-full border border-on-primary/40 text-on-primary py-md rounded-lg font-bold text-center hover:bg-on-primary/10 transition-all flex items-center justify-center gap-sm"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">how_to_vote</span>
+                        Vote on Claims
+                      </Link>
+                    </div>
+                  </>
                 ) : (
-                  <button
-                    onClick={handleJoin}
-                    disabled={joining || summary?.status !== "Active"}
-                    className="w-full bg-secondary-fixed text-on-secondary-fixed py-md rounded-lg font-bold hover:brightness-105 transition-all disabled:opacity-50"
-                  >
-                    {joining ? "Joining..." : isConnected ? "Join Pool" : "Connect Wallet"}
-                  </button>
+                  <>
+                    <h3 className="font-headline-md text-headline-md mb-md">Join This Pool</h3>
+                    <p className="font-body-sm text-body-sm mb-lg opacity-80">
+                      Pay a one-time contribution of {summary ? `${fromStroops(summary.contributionAmount).toFixed(2)} USDC` : "—"} to become a member and gain coverage + voting rights.
+                    </p>
+                    <button
+                      onClick={handleJoin}
+                      disabled={joining || summary?.status !== "Active"}
+                      className="w-full bg-secondary-fixed text-on-secondary-fixed py-md rounded-lg font-bold hover:brightness-105 transition-all disabled:opacity-50"
+                    >
+                      {joining ? "Joining..." : isConnected ? `Pay & Join Pool` : "Connect Wallet"}
+                    </button>
+                  </>
                 )}
                 {status && (
                   <p className="mt-md text-sm opacity-90">{status}</p>

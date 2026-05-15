@@ -2,8 +2,7 @@ import Link from "next/link";
 
 const footerLinks = [
   { href: "#", label: "Guidelines" },
-  { href: "#", label: "Github" },
-  { href: "#", label: "Audit Reports" },
+  { href: "https://github.com/AstronLabs/nexusGuard", label: "Github" },
   { href: "#", label: "Privacy Policy" },
   { href: "#", label: "Terms of Service" }
 ];
@@ -17,7 +16,7 @@ export function Footer() {
             NexusGuard
           </Link>
           <p className="text-center font-body-sm text-body-sm text-on-surface-variant md:text-left">
-            © 2024 NexusGuard Protocol. Transparent everyday microinsurance.
+            © 2026 NexusGuard Protocol. Transparent everyday microinsurance.
           </p>
         </div>
 
