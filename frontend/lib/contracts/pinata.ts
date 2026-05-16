@@ -3,7 +3,7 @@
  * Uploads evidence files and metadata JSON to backend which proxies to Pinata.
  */
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
+const BACKEND_URL = "";
 
 export type UploadResult = {
   cid: string;

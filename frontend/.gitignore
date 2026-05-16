@@ -1,0 +1,20 @@
+# Next.js
+.next/
+out/
+
+# Dependencies
+node_modules/
+
+# Env files (secrets stay local)
+.env.local
+.env.*.local
+
+# Build output
+dist/
+
+# OS / IDE
+.DS_Store
+*.log
+.vscode/
+.idea/
+.vercel

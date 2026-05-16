@@ -33,16 +33,16 @@ const upload = multer({
 /**
  * POST /api/ipfs/upload
  * Upload a file to IPFS via Pinata — x402 payment gated.
-router.get('/:cid', async (req: Request, res: Response, next: NextFunction) => {
+ */
 router.post(
-    const cid = Array.isArray(req.params.cid) ? req.params.cid[0] : req.params.cid;
+  "/upload",
   authMiddleware,
   x402PaymentGate({
-    amount: '0.005',
-    asset: 'USDC',
-    description: 'IPFS upload cost recovery',
+    amount: "0.005",
+    asset: "USDC",
+    description: "IPFS upload cost recovery",
   }),
-  upload.single('file'),
+  upload.single("file"),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const file = req.file;

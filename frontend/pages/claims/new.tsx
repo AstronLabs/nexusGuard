@@ -6,8 +6,10 @@ import { Header } from "../../components/header";
 import { Footer } from "../../components/footer";
 import { useWallet } from "../../context/WalletContext";
 import { pool } from "../../lib/contracts";
-import { toStroops, fromStroops } from "../../lib/contracts/config";
-import { uploadFile } from "../../lib/contracts/pinata";
+import { toStroops } from "../../lib/contracts/config";
+import { uploadEvidenceFile, preCheckClaim, type FraudReport } from "../../lib/api";
+
+type Step = "form" | "checking" | "ready" | "submitting" | "done";
 
 export default function SubmitClaimPage() {
   const router = useRouter();
@@ -18,69 +20,89 @@ export default function SubmitClaimPage() {
   const [description, setDescription] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [certified, setCertified] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [status, setStatus] = useState("");
+  const [step, setStep] = useState<Step>("form");
+  const [statusMsg, setStatusMsg] = useState("");
+  const [fraudReport, setFraudReport] = useState<FraudReport | null>(null);
+  const [evidenceCid, setEvidenceCid] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    if (e.target.files) {
-      setFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
-    }
+    if (e.target.files) setFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
   }
-
   function removeFile(index: number) {
     setFiles((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!certified) {
-      setStatus("Please certify the information is accurate.");
-      return;
-    }
+    if (!certified) { setStatusMsg("Please certify the information is accurate."); return; }
 
     const connectedAddress = address || (await connect());
-    if (!connectedAddress) {
-      setStatus("Connect your wallet before submitting a claim.");
-      return;
-    }
+    if (!connectedAddress) { setStatusMsg("Connect your wallet before submitting."); return; }
+    if (!poolAddress) { setStatusMsg("No pool address specified. Navigate from a pool details page."); return; }
 
-    if (!poolAddress) {
-      setStatus("No pool address specified. Navigate from a pool details page.");
-      return;
-    }
-
-    setSubmitting(true);
-    setStatus("Uploading evidence to IPFS...");
+    setStep("checking");
+    setStatusMsg("");
 
     try {
-      // Upload files to IPFS
-      let evidenceCid = "";
+      // 1. Upload evidence
+      let cid = "";
       if (files.length > 0) {
+        setStatusMsg("Uploading evidence to IPFS...");
         try {
-          const uploadResult = await uploadFile(files[0]);
-          evidenceCid = uploadResult.cid;
+          const up = await uploadEvidenceFile(files[0], connectedAddress, poolAddress);
+          cid = up.cid;
+          setEvidenceCid(cid);
         } catch {
-          evidenceCid = "";
+          setStatusMsg("⚠ Evidence upload failed — proceeding without IPFS CID.");
         }
       }
 
-      setStatus("Submitting claim to Stellar Testnet...");
+      // 2. Backend precheck + fraud analysis
+      setStatusMsg("Running claim verification...");
+      try {
+        const result = await preCheckClaim(poolAddress, toStroops(Number(amount)), cid, connectedAddress);
+        if (!result.preCheck.valid) {
+          setStatusMsg(result.preCheck.errors.join(" · "));
+          setStep("form");
+          return;
+        }
+        setFraudReport(result.fraudReport);
+        if (result.fraudReport.recommendation === "reject") {
+          setStatusMsg("Claim flagged as high risk by fraud detection. Submission blocked.");
+          setStep("form");
+          return;
+        }
+      } catch {
+        // Backend offline — skip precheck, proceed with caution
+        setStatusMsg("");
+      }
 
-      const reviewPeriod = 7 * 24 * 60 * 60; // 7 days
+      setStep("ready");
+    } catch (err) {
+      setStatusMsg(err instanceof Error ? err.message : "Verification failed.");
+      setStep("form");
+    }
+  }
+
+  async function handleConfirmSubmit() {
+    const connectedAddress = address!;
+    setStep("submitting");
+    setStatusMsg("Signing transaction with Freighter...");
+    try {
+      const reviewPeriod = 7 * 24 * 60 * 60;
       const txHash = await pool.submitClaim(poolAddress, connectedAddress, {
         amount: toStroops(Number(amount)),
         description,
         evidenceCid,
         reviewPeriodSeconds: reviewPeriod,
       });
-
-      setStatus(`Claim submitted! TX: ${txHash}`);
+      setStatusMsg(`Claim submitted! TX: ${txHash.slice(0, 16)}...`);
+      setStep("done");
       setTimeout(() => router.push(`/pool-details?address=${poolAddress}`), 3000);
     } catch (e) {
-      setStatus(e instanceof Error ? e.message : "Failed to submit claim.");
-    } finally {
-      setSubmitting(false);
+      setStatusMsg(e instanceof Error ? e.message : "Failed to submit claim.");
+      setStep("ready");
     }
   }
 
@@ -225,9 +247,9 @@ export default function SubmitClaimPage() {
                   </label>
                 </div>
 
-                {status && (
-                  <p className={`text-body-sm ${status.includes("!") ? "text-secondary" : "text-error"}`}>
-                    {status}
+                {statusMsg && (
+                  <p className={`text-body-sm ${statusMsg.startsWith("⚠") ? "text-error" : "text-on-surface-variant"}`}>
+                    {statusMsg}
                   </p>
                 )}
 
@@ -235,10 +257,19 @@ export default function SubmitClaimPage() {
                   <button
                     className="flex-1 bg-secondary text-on-secondary px-xl py-lg rounded-lg font-headline-sm hover:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-sm disabled:opacity-50"
                     type="submit"
-                    disabled={submitting}
+                    disabled={step === "checking" || step === "submitting" || step === "done"}
                   >
-                    {submitting ? "Submitting..." : "Submit Claim Proposal"}
-                    <span className="material-symbols-outlined">send</span>
+                    {step === "checking" ? (
+                      <>
+                        <span className="w-4 h-4 border-2 border-on-secondary/30 border-t-on-secondary rounded-full animate-spin" />
+                        Verifying...
+                      </>
+                    ) : (
+                      <>
+                        Verify &amp; Continue
+                        <span className="material-symbols-outlined">arrow_forward</span>
+                      </>
+                    )}
                   </button>
                   <button
                     className="px-xl py-lg border border-outline-variant text-on-surface-variant rounded-lg font-headline-sm hover:bg-surface-container-high transition-all"
@@ -249,6 +280,67 @@ export default function SubmitClaimPage() {
                   </button>
                 </div>
               </form>
+
+              {/* Step: Ready to submit — show fraud report and confirm */}
+              {step === "ready" && (
+                <div className="p-xl border-t border-outline-variant/20 space-y-lg">
+                  {fraudReport && (
+                    <div className={`p-md rounded-lg flex items-start gap-md ${
+                      fraudReport.riskLevel === "low"
+                        ? "bg-secondary-container text-on-secondary-container"
+                        : "bg-tertiary-container text-on-tertiary-container"
+                    }`}>
+                      <span className="material-symbols-outlined text-[20px] mt-[2px]">
+                        {fraudReport.riskLevel === "low" ? "verified_user" : "warning"}
+                      </span>
+                      <div>
+                        <p className="font-label-caps text-label-caps">
+                          RISK ASSESSMENT: {fraudReport.riskLevel.toUpperCase()} ({fraudReport.riskScore}/100)
+                        </p>
+                        <p className="font-body-sm text-body-sm opacity-80 mt-xs">
+                          {fraudReport.recommendation === "auto-proceed"
+                            ? "Claim passed all checks. Ready to submit."
+                            : "Claim flagged for manual review — you may still submit."}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {evidenceCid && (
+                    <p className="text-body-sm text-on-surface-variant flex items-center gap-xs">
+                      <span className="material-symbols-outlined text-secondary text-[16px]">cloud_done</span>
+                      Evidence uploaded: <span className="font-mono-data">{evidenceCid.slice(0, 20)}...</span>
+                    </p>
+                  )}
+                  <div className="flex gap-md">
+                    <button
+                      onClick={handleConfirmSubmit}
+                      disabled={step !== "ready"}
+                      className="flex-1 bg-primary text-on-primary py-lg rounded-lg font-headline-sm font-bold hover:opacity-90 transition-all flex items-center justify-center gap-sm disabled:opacity-50"
+                    >
+                      <span className="material-symbols-outlined">send</span>
+                      Confirm &amp; Submit On-Chain
+                    </button>
+                    <button
+                      onClick={() => setStep("form")}
+                      className="px-lg py-lg border border-outline-variant text-on-surface-variant rounded-lg hover:bg-surface-container-high transition-all"
+                    >
+                      Back
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step: Done */}
+              {step === "done" && (
+                <div className="p-xl border-t border-outline-variant/20 text-center">
+                  <span className="material-symbols-outlined text-[48px] text-secondary block mb-md" style={{ fontVariationSettings: "'FILL' 1" }}>
+                    check_circle
+                  </span>
+                  <p className="font-headline-sm text-headline-sm text-primary mb-xs">Claim Submitted!</p>
+                  <p className="text-body-sm text-on-surface-variant">{statusMsg}</p>
+                  <p className="text-body-sm text-on-surface-variant mt-xs">Redirecting to pool...</p>
+                </div>
+              )}
             </div>
           </div>
         </main>

@@ -2,6 +2,8 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 
 import { WalletButton } from "./wallet-button";
+import { NotificationsBell } from "./notifications-bell";
+import { useWallet } from "../context/WalletContext";
 
 type NavItem = {
   href: string;
@@ -16,6 +18,7 @@ const navItems: NavItem[] = [
 
 export function Header() {
   const router = useRouter();
+  const { address, isConnected } = useWallet();
 
   return (
     <header className="fixed top-0 z-50 w-full border-b border-outline-variant/30 bg-surface/80 shadow-sm backdrop-blur-md">
@@ -39,6 +42,9 @@ export function Header() {
         </nav>
 
         <div className="flex items-center gap-md">
+          {isConnected && address && (
+            <NotificationsBell stellarAddress={address} />
+          )}
           <WalletButton />
         </div>
       </div>
