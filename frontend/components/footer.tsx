@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 const footerLinks = [
-  { href: "#", label: "Guidelines" },
   { href: "https://github.com/AstronLabs/nexusGuard", label: "Github" },
   { href: "#", label: "Privacy Policy" },
   { href: "#", label: "Terms of Service" }

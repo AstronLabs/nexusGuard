@@ -12,8 +12,8 @@ import {
   u32ToScVal,
   scValToNative,
 } from "./soroban";
-import type { PoolSummary, Claim, ClaimStatus, Role } from "./types";
-import { PoolPhase } from "./types";
+import type { PoolSummary, Claim, ClaimStatus } from "./types";
+import { PoolPhase, Role } from "./types";
 
 // ─── Read functions ──────────────────────────────────────────────
 
@@ -372,7 +372,7 @@ function parsePoolSummary(raw: any): PoolSummary {
   };
 }
 
-const VALID_ROLES: Role[] = ["Creator", "Member", "Manager"];
+const VALID_ROLES: Role[] = [Role.Creator, Role.Member, Role.Manager];
 
 function parseRole(raw: any): Role | null {
   let candidate: string;
