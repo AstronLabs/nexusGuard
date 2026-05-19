@@ -53,12 +53,21 @@ NexusGuard takes the **age-old concept of community risk-sharing** and puts it o
 
 ### Off-chain Services (Next.js API Routes)
 
-IPFS evidence uploads are proxied through Next.js API routes to Pinata — no separate backend server required.
+Server-side orchestration now runs through Next.js API routes in `frontend/pages/api/`, so there is no separate backend service to deploy. These routes proxy IPFS writes, expose pool/claim helpers, serve notifications, and provide a lightweight health check.
 
 | Route | Purpose |
 |---|---|
-| `POST /api/ipfs/upload` | Upload claim evidence file to Pinata/IPFS |
-| `POST /api/ipfs/upload-json` | Upload pool/claim metadata JSON to IPFS |
+| `POST /api/ipfs/upload` | Upload claim evidence files to Pinata/IPFS |
+| `POST /api/ipfs/upload-json` | Upload pool or claim metadata JSON to Pinata/IPFS |
+| `POST /api/ipfs/pin/[cid]` | Pin an existing IPFS CID through Pinata |
+| `POST /api/claims/precheck` | Validate claim eligibility and return fraud/risk signals before submission |
+| `GET /api/pools` | List Factory pools with their on-chain summaries |
+| `POST /api/pools` | Create a pool notification after client-side contract submission |
+| `GET /api/pools/stats` | Return aggregate pool, member, and balance stats for the landing page |
+| `GET /api/notifications` | List recent in-memory notifications |
+| `PATCH /api/notifications/[id]` | Mark one notification as read |
+| `POST /api/notifications/read-all` | Mark all notifications as read |
+| `GET /api/health` | Check API, Stellar, contract, and IPFS configuration status |
 
 ---
 
@@ -126,59 +135,54 @@ nexusGuard/
 │
 ├── frontend/                           # Next.js 14 application
 │   ├── pages/                          # Next.js Pages Router
-│   │   ├── index.tsx                   # Landing page (live stats from contracts)
-│   │   ├── explore-pools.tsx           # Browse all pools from Factory
-│   │   ├── pool-details.tsx            # Pool detail, members, claims
-│   │   ├── create-pool.tsx             # Create new pool via Factory
-│   │   ├── dashboard.tsx               # User's pools, claims, pending votes
+│   │   ├── index.tsx                   # Landing page with live stats
+│   │   ├── explore-pools.tsx           # Browse pools from the Factory
+│   │   ├── pool-details.tsx            # Pool details, members, and claims
+│   │   ├── create-pool.tsx             # Create a new pool via Factory
+│   │   ├── dashboard.tsx               # User pools, claims, and pending votes
 │   │   ├── claim-voting.tsx            # Vote on pending claims
-│   │   └── claims/
-│   │       └── new.tsx                 # Submit a claim with IPFS evidence
-│   ├── components/
-│   │   ├── header.tsx                  # Shared nav with WalletButton
-│   │   ├── footer.tsx                  # Shared footer
-│   │   ├── wallet-button.tsx           # Freighter connect/disconnect
-│   │   ├── button.tsx                  # Reusable Button component
-│   │   └── FigmaPage.tsx               # Page wrapper with title
-│   ├── context/
-│   │   └── WalletContext.tsx           # Global wallet state (Freighter)
-│   ├── hooks/
-│   │   └── useFreighterWallet.ts       # Low-level Freighter hook
+│   │   ├── guidelines.tsx              # Community guidelines
+│   │   ├── claims/
+│   │   │   └── new.tsx                 # Submit a claim with IPFS evidence
+│   │   └── api/                        # Server-side Next.js API routes
+│   │       ├── claims/precheck.ts      # Claim eligibility and fraud pre-check
+│   │       ├── health.ts               # API configuration health check
+│   │       ├── ipfs/
+│   │       │   ├── pin/[cid].ts        # Pin an existing CID
+│   │       │   ├── upload.ts           # Proxy file uploads to Pinata
+│   │       │   └── upload-json.ts      # Proxy JSON uploads to Pinata
+│   │       ├── notifications/
+│   │       │   ├── [id].ts             # Mark one notification as read
+│   │       │   ├── index.ts            # List notifications
+│   │       │   └── read-all.ts         # Mark all notifications as read
+│   │       └── pools/
+│   │           ├── index.ts            # List pools and create notifications
+│   │           └── stats.ts            # Aggregate landing-page stats
+│   ├── components/                     # Shared UI components
+│   ├── context/WalletContext.tsx       # Global wallet state (Freighter)
+│   ├── hooks/useFreighterWallet.ts     # Low-level Freighter hook
 │   ├── lib/
-│   │   └── contracts/
-│   │       ├── index.ts                # Barrel exports
-│   │       ├── types.ts                # PoolSummary, Claim, enums, POOL_CATEGORY_MAP
-│   │       ├── config.ts               # Network config, CONTRACTS, conversion helpers
-│   │       ├── soroban.ts              # Transaction build/simulate/submit helpers
-│   │       ├── factory.ts              # Factory contract client
-│   │       ├── pool.ts                 # Pool contract client
-│   │       └── pinata.ts               # IPFS upload helpers (via API routes)
-│   ├── pages/api/
-│   │   ├── ipfs/
-│   │   │   ├── upload.ts               # Proxy file uploads to Pinata
-│   │   │   └── upload-json.ts          # Proxy JSON uploads to Pinata
-│   ├── styles/
-│   │   └── globals.css
-│   ├── .env.local                      # Runtime env vars (gitignored)
+│   │   ├── api.ts                      # Browser API helpers
+│   │   ├── x402-client.ts              # `frontend/lib/x402-client.ts`: browser-side x402 payment helper
+│   │   ├── contracts/                  # Soroban client helpers and types
+│   │   └── server/                     # `frontend/lib/server/`: API-only helpers
+│   │       ├── soroban.ts              # Server-side contract reads and summaries
+│   │       ├── x402.ts                 # Server-side x402 payment verification
+│   │       └── notifications-store.ts  # In-memory notifications store
+│   ├── styles/globals.css
+│   ├── .env.example                    # Documented runtime env template
 │   ├── package.json
 │   ├── tailwind.config.ts
 │   └── next.config.js
 │
 └── contracts/                          # Soroban smart contracts (Rust)
     ├── Cargo.toml                      # Workspace manifest
-    ├── .env                            # Deployer config (gitignored)
     ├── scripts/
     │   └── deploy-pool-testnet.sh      # Build + deploy Factory + Pool WASM
     └── contracts/
         ├── factory/                    # Factory contract
-        │   ├── Cargo.toml
-        │   └── src/lib.rs
         ├── pool/                       # Pool contract (self-contained)
-        │   ├── Cargo.toml
-        │   └── src/lib.rs
         └── smart_account/              # Smart account (optional automation)
-            ├── Cargo.toml
-            └── src/lib.rs
 ```
 
 ---
@@ -223,9 +227,21 @@ NEXT_PUBLIC_USDC_TOKEN_ID=CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDA
 # Deployer/admin address
 NEXT_PUBLIC_DEPLOYER_ADDRESS=GALK2FN3QXLETSVMUEVWR4IE2FYEFEMWZR2QXU5EU6APVJVATFLS7HON
 
+# Server-side Stellar / Soroban settings
+STELLAR_NETWORK=testnet
+STELLAR_RPC_URL=https://soroban-testnet.stellar.org
+STELLAR_PUBLIC_KEY=GALK2FN3QXLETSVMUEVWR4IE2FYEFEMWZR2QXU5EU6APVJVATFLS7HON
+CONTRACT_FACTORY=CB43V4IO5VSQTNBMFWJEMZTOBS7UN5S6LEOQQIV2AXMCSVX5APFLNQ5W
+CONTRACT_TOKEN=CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA
+
 # Pinata (for IPFS uploads — optional, claims work without it)
 PINATA_API_KEY=your_pinata_api_key
-PINATA_API_SECRET=your_pinata_api_secret
+PINATA_SECRET_API_KEY=your_pinata_secret_key
+PINATA_GATEWAY_URL=https://gateway.pinata.cloud/ipfs
+
+# x402 Payment Protocol
+X402_RECEIVER_ADDRESS=GALK2FN3QXLETSVMUEVWR4IE2FYEFEMWZR2QXU5EU6APVJVATFLS7HON
+NEXT_PUBLIC_X402_FACILITATOR_URL=https://x402.org/facilitator
 ```
 
 Run the dev server:
@@ -289,11 +305,19 @@ This will:
 
 | Variable | Description |
 |---|---|
-| `NEXT_PUBLIC_FACTORY_CONTRACT_ID` | Deployed Factory contract address |
-| `NEXT_PUBLIC_USDC_TOKEN_ID` | USDC SAC contract address on testnet |
-| `NEXT_PUBLIC_DEPLOYER_ADDRESS` | Admin/deployer Stellar address |
+| `NEXT_PUBLIC_FACTORY_CONTRACT_ID` | Deployed Factory contract address exposed to the browser |
+| `NEXT_PUBLIC_USDC_TOKEN_ID` | USDC SAC contract address on testnet exposed to the browser |
+| `NEXT_PUBLIC_DEPLOYER_ADDRESS` | Admin/deployer Stellar address exposed to the browser |
+| `STELLAR_NETWORK` | Server-side Stellar network name, usually `testnet` |
+| `STELLAR_RPC_URL` | Soroban RPC endpoint used by API routes |
+| `STELLAR_PUBLIC_KEY` | Server-side public key used for API route contract reads/helpers |
+| `CONTRACT_FACTORY` | Factory contract ID used by API routes |
+| `CONTRACT_TOKEN` | USDC token contract ID used by API routes |
 | `PINATA_API_KEY` | Pinata API key for IPFS uploads |
-| `PINATA_API_SECRET` | Pinata secret key |
+| `PINATA_SECRET_API_KEY` | Pinata secret API key for IPFS uploads |
+| `PINATA_GATEWAY_URL` | IPFS gateway base URL for pinned claim evidence |
+| `X402_RECEIVER_ADDRESS` | Stellar address that receives x402 payments |
+| `NEXT_PUBLIC_X402_FACILITATOR_URL` | x402 facilitator URL used by the client payment flow |
 
 ### `contracts/.env`
 
